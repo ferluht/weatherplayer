@@ -734,6 +734,11 @@ async function buildEngine(p, sessionKey, lags) {
   let tgtAudio  = mkAudio();
   let curAudioL = mkAudio(), curAudioR = mkAudio();
   let phaseDriftTime = 0;
+  // Per-oscillator chorus: six incommensurate rates so they never phase-lock
+  const chorusPhases = [0.00, 1.13, 2.29, 3.71, 4.97, 0.53];
+  const chorusRates  = [0.073, 0.107, 0.137, 0.091, 0.163, 0.059]; // Hz
+  const chorusDepths = [7, 6, 8, 7, 6, 8]; // cents per oscillator
+  let lastWaveApplyMs = 0; // rate-limit setPeriodicWave to avoid crackles
 
   function morphTick() {
     const f  = morphFraction();
@@ -762,7 +767,11 @@ async function buildEngine(p, sessionKey, lags) {
     trioL.fm12.gain.rampTo(curAudioL.fm12g, RT);
     const wL = curAudioL.windDetune;
     const wR = curAudioR.windDetune;
-    trioL.oscs.forEach((o,i) => { o.detune.rampTo(pitchCentsRef + wL * [1.0, -0.7, 0.5][i], RT); });
+    // Advance chorus phases (60ms per tick)
+    chorusPhases.forEach((_, i) => chorusPhases[i] += chorusRates[i] * 0.06 * Math.PI * 2);
+    const cL = chorusPhases.slice(0,3).map((p,i) => Math.sin(p) * chorusDepths[i]);
+    const cR = chorusPhases.slice(3,6).map((p,i) => Math.sin(p) * chorusDepths[i+3]);
+    trioL.oscs.forEach((o,i) => { o.detune.rampTo(pitchCentsRef + wL * [1.0, -0.7, 0.5][i] + cL[i], RT); });
     // Apply R
     const [g0R,g1R,g2R] = trioR.gains;
     g0R.gain.rampTo(0.42*curAudioR.brightness, RT);
@@ -772,7 +781,7 @@ async function buildEngine(p, sessionKey, lags) {
     trioR.fm12.gain.rampTo(curAudioR.fm12g, RT);
     phaseDriftTime += 0.06;
     const phaseDrift = Math.sin(phaseDriftTime * curAudioR.windPhaseRate * Math.PI * 2) * curAudioR.windPhaseDepth;
-    trioR.oscs.forEach((o,i) => { o.detune.rampTo(pitchCentsRef + wR * [-1.0, 0.7, -0.5][i] + phaseDrift, RT); });
+    trioR.oscs.forEach((o,i) => { o.detune.rampTo(pitchCentsRef + wR * [-1.0, 0.7, -0.5][i] + phaseDrift + cR[i], RT); });
     // Shared wind
     windBassG.gain.rampTo(curAudioL.windBass, RT);
     windMidG.gain.rampTo(curAudioL.windMid, RT);
@@ -790,8 +799,12 @@ async function buildEngine(p, sessionKey, lags) {
         curCoeffsR[v].imag[h] = linI(fromCoeffsR[v].imag[h], tgtCoeffsR[v].imag[h]);
       }
     }
-    try { trioL.applyCoeffs(curCoeffsL); } catch(e){}
-    try { trioR.applyCoeffs(curCoeffsR); } catch(e){}
+    const nowMs = Date.now();
+    if (nowMs - lastWaveApplyMs > 280) {
+      try { trioL.applyCoeffs(curCoeffsL); } catch(e){}
+      try { trioR.applyCoeffs(curCoeffsR); } catch(e){}
+      lastWaveApplyMs = nowMs;
+    }
   }
 
   // ── Update (called every timeline step) ──────────────
@@ -858,7 +871,7 @@ async function buildEngine(p, sessionKey, lags) {
 
   const getCoeffs = () => ({ L: curCoeffsL, R: curCoeffsR });
 
-  return { startAll, stopAll, updateParams, setPitchCents, getCoeffs, dispose, analyser, analyserL, analyserR, xyBufL, xyBufR, fftAnalyser, morphFraction };
+  return { startAll, stopAll, updateParams, setPitchCents, getCoeffs, dispose, analyser, analyserL, analyserR, xyBufL, xyBufR, fftAnalyser, morphFraction, masterFade };
 }
 
 // ══════════════════════════════════════════════════════
@@ -1294,16 +1307,20 @@ function show(v) {
 
 // ── Timeline scrubber ──────────────────────────────────
 const tlTrack = document.getElementById('tlTrack');
-function seekFromEvent(e) {
+let seekThrottle = 0;
+function seekFromEvent(e, immediate=false) {
   if(!timeline.length)return;
+  const now = Date.now();
+  if (!immediate && now - seekThrottle < 180) return;
+  seekThrottle = now;
   const rect=tlTrack.getBoundingClientRect();
   const x=(e.touches?e.touches[0].clientX:e.clientX)-rect.left;
-  tlGoto(Math.round(clamp(x/rect.width,0,1)*(timeline.length-1)), 1.2);
+  tlGoto(Math.round(clamp(x/rect.width,0,1)*(timeline.length-1)), 1.5);
 }
-tlTrack.addEventListener('click', seekFromEvent);
+tlTrack.addEventListener('click', e=>seekFromEvent(e, true));
 tlTrack.addEventListener('mousedown', e=>{
   const mv=ev=>seekFromEvent(ev);
-  const up=()=>{window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);};
+  const up=ev=>{seekFromEvent(ev,true);window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);};
   window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
 });
 
