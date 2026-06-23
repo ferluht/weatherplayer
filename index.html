@@ -5,8 +5,12 @@
 <meta property="og:title" content="Weather Player" />
 <meta property="og:description" content="Atmospheric data to Atmospheric drone" />
 <meta property="og:image" content="https://raw.githubusercontent.com/ferluht/weatherplayer/refs/heads/main/preview.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
 <meta property="og:url" content="https://ferluht.github.io/weatherplayer" />
 <meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://raw.githubusercontent.com/ferluht/weatherplayer/refs/heads/main/preview.jpg" />
 
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -95,7 +99,7 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 .osc-pane{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:12px}
 .osc-cell{position:relative;background:rgba(0,0,0,.25);border-radius:6px;overflow:hidden}
 .osc-cell canvas{display:block;width:100%;height:44px}
-.osc-lbl{position:absolute;top:3px;left:5px;font-size:.58rem;color:rgba(123,159,255,.55);pointer-events:none;font-family:monospace}
+.osc-lbl{position:absolute;top:3px;right:5px;font-size:.52rem;color:rgba(123,159,255,.65);pointer-events:none;font-family:monospace;white-space:nowrap}
 .pitch-row{display:flex;align-items:center;gap:9px;margin-bottom:10px}
 .pitch-label{font-size:.7rem;color:var(--dim);white-space:nowrap;min-width:36px}
 .pitch-val{font-size:.68rem;color:var(--accent);font-family:monospace;min-width:28px;text-align:right}
@@ -164,15 +168,13 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
   <div id="idleView">
     <div class="idle">
       <div class="globe">🌍</div>
-      <p>Choose a location and date range — one key, one month, evolving complexity</p>
+      <p>Choose a location and date range — one key, one drone, evolving timbre</p>
       <div class="presets">
-        <button class="preset" data-city="London">London</button>
-        <button class="preset" data-city="Reykjavik">Reykjavík</button>
-        <button class="preset" data-city="Mumbai">Mumbai</button>
-        <button class="preset" data-city="Yakutsk">Yakutsk</button>
-        <button class="preset" data-city="Honolulu">Honolulu</button>
-        <button class="preset" data-city="Ushuaia">Ushuaia</button>
-        <button class="preset" data-city="Sahara">Sahara</button>
+        <button class="preset" data-city="Yerevan">Yerevan</button>
+        <button class="preset" data-city="Tbilisi">Tbilisi</button>
+        <button class="preset" data-city="Dilijan">Dilijan</button>
+        <button class="preset" data-city="Munich">Munich</button>
+        <button class="preset" data-city="Moscow">Moscow</button>
       </div>
     </div>
   </div>
@@ -192,12 +194,12 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
           <div class="ptitle">Waveform</div>
           <canvas id="waveCanvas"></canvas>
           <div class="osc-pane" id="oscPane">
-            <div class="osc-cell"><canvas id="oscL0"></canvas><span class="osc-lbl">L₁</span></div>
-            <div class="osc-cell"><canvas id="oscL1"></canvas><span class="osc-lbl">L₂</span></div>
-            <div class="osc-cell"><canvas id="oscL2"></canvas><span class="osc-lbl">L₃</span></div>
-            <div class="osc-cell"><canvas id="oscR0"></canvas><span class="osc-lbl">R₁</span></div>
-            <div class="osc-cell"><canvas id="oscR1"></canvas><span class="osc-lbl">R₂</span></div>
-            <div class="osc-cell"><canvas id="oscR2"></canvas><span class="osc-lbl">R₃</span></div>
+            <div class="osc-cell"><canvas id="oscL0"></canvas><span class="osc-lbl" id="oscLblL0">L₁</span></div>
+            <div class="osc-cell"><canvas id="oscL1"></canvas><span class="osc-lbl" id="oscLblL1">L₂</span></div>
+            <div class="osc-cell"><canvas id="oscL2"></canvas><span class="osc-lbl" id="oscLblL2">L₃</span></div>
+            <div class="osc-cell"><canvas id="oscR0"></canvas><span class="osc-lbl" id="oscLblR0">R₁</span></div>
+            <div class="osc-cell"><canvas id="oscR1"></canvas><span class="osc-lbl" id="oscLblR1">R₂</span></div>
+            <div class="osc-cell"><canvas id="oscR2"></canvas><span class="osc-lbl" id="oscLblR2">R₃</span></div>
           </div>
           <div class="ptitle" style="margin-bottom:8px">Timeline</div>
           <div class="tl-wrap">
@@ -303,27 +305,28 @@ const wxDesc = c => WX_MAP[c] || ['Unknown','🌡️'];
 //  SYNTHESIS MATH
 // ══════════════════════════════════════════════════════
 
-// DFT of temperature window → oscillator harmonic amplitudes (partials)
-function computePartials(temps, numHarmonics=8) {
+// Full complex DFT of temperature window → PeriodicWave coefficients (real + imag)
+// The oscillator waveform directly reproduces the shape of the temperature curve.
+function computeWaveCoeffs(temps) {
   const N = temps.length;
-  if (N < 4) return Array(numHarmonics).fill(0).map((_,i)=>i===0?1:0);
+  const numH = Math.floor(N / 2);
   const mean = temps.reduce((a,b)=>a+b,0)/N;
   const c = temps.map(t=>t-mean);
-  const amps = [];
-  for (let k=1; k<=numHarmonics; k++) {
+  const mx = Math.max(...c.map(Math.abs), 0.001);
+  const norm = c.map(v=>v/mx);
+  const real = new Array(numH+1).fill(0); // cosine coefficients for PeriodicWave
+  const imag = new Array(numH+1).fill(0); // sine coefficients
+  for (let k=1; k<=numH; k++) {
     let re=0, im=0;
     for (let n=0; n<N; n++) {
       const angle = 2*Math.PI*k*n/N;
-      re += c[n]*Math.cos(angle);
-      im -= c[n]*Math.sin(angle);
+      re += norm[n]*Math.cos(angle);
+      im -= norm[n]*Math.sin(angle);
     }
-    amps.push(Math.sqrt(re*re+im*im)/(N/2));
+    real[k] = re/(N/2);
+    imag[k] = im/(N/2);
   }
-  const mx = Math.max(...amps, 0.001);
-  const norm = amps.map(a=>a/mx);
-  // Ensure fundamental is audible (never fully silent)
-  if (norm[0] < 0.12) norm[0] = 0.12;
-  return norm;
+  return { real, imag };
 }
 
 // FM modulation index: proportional to temperature difference between windows
@@ -473,11 +476,6 @@ function weatherToMusic(w, sessionKey) {
   // Snow
   const snowIntervalMs = isSnow ? clamp(3500/(precip+0.25), 250, 6000) : null;
 
-  // Sparkle rate (high-freq metallic plucks)
-  const sparkleRate = isStorm ? 0.06 : isFog ? 0 : isSnow ? 0.12
-    : rainOn ? 0.25
-    : clamp((1-clouds/100)*0.5, 0.05, 0.55);
-
   // Gust/whoosh rate (bandpass noise swells)
   const gustRate = isStorm ? 0.9
     : windNorm>0.5 ? windNorm*0.6
@@ -494,7 +492,7 @@ function weatherToMusic(w, sessionKey) {
     subPulseGain, subPulseRate,
     rainOn, rainIntervalMs, rainNoiseLvl,
     isSnow, snowIntervalMs,
-    sparkleRate, gustRate,
+    gustRate,
     vis:{
       warmth:    pct(temp,-30,45)/100,
       windiness: windNorm,
@@ -528,24 +526,28 @@ async function buildEngine(p, sessionKey, lags) {
   await Tone.start();
 
   // ── Master chain ──────────────────────────────────────
-  const masterFade    = new Tone.Gain(0);
-  const masterFilter  = new Tone.Filter({ frequency:p.filterHz, type:'lowpass', Q:p.filterQ });
-  const masterReverb  = new Tone.Reverb({ decay:clamp(p.revDecay,0.5,22), wet:p.revWet });
-  const masterLimiter = new Tone.Limiter(-3);
-  const analyser      = new Tone.Analyser('waveform', 512);
+  const masterFade       = new Tone.Gain(0);
+  const masterFilter     = new Tone.Filter({ frequency:p.filterHz, type:'lowpass', Q:p.filterQ });
+  const masterReverb     = new Tone.Reverb({ decay:clamp(p.revDecay,0.5,22), wet:p.revWet });
+  const loudnessGain     = new Tone.Gain(1);
+  const masterCompressor = new Tone.Compressor({ threshold:-24, ratio:4, attack:0.003, release:0.25, knee:6 });
+  const masterLimiter    = new Tone.Limiter(-1);
+  const meter            = new Tone.Meter({ normalRange:false });
+  const analyser         = new Tone.Analyser('waveform', 512);
   await masterReverb.ready;
-  masterFade.chain(masterFilter, masterReverb, masterLimiter, Tone.Destination);
+  masterFade.chain(masterFilter, masterReverb, loudnessGain, masterCompressor, masterLimiter, Tone.Destination);
   masterLimiter.connect(analyser);
+  masterLimiter.connect(meter);
 
 
   // ── Stereo FM oscillator pairs (L/R with different lag windows + different morph speed) ──
   // L: current lag windows, converges faster.  R: 2h-offset windows, converges slower → natural lag.
-  const partials0 = computePartials(lags.temps0);
-  const partials1 = computePartials(lags.temps1);
-  const partials2 = computePartials(lags.temps2);
-  const partialsR0 = computePartials(lags.tempsR0 ?? lags.temps0);
-  const partialsR1 = computePartials(lags.tempsR1 ?? lags.temps1);
-  const partialsR2 = computePartials(lags.tempsR2 ?? lags.temps2);
+  const coeffs0  = computeWaveCoeffs(lags.temps0);
+  const coeffs1  = computeWaveCoeffs(lags.temps1);
+  const coeffs2  = computeWaveCoeffs(lags.temps2);
+  const coeffsR0 = computeWaveCoeffs(lags.tempsR0 ?? lags.temps0);
+  const coeffsR1 = computeWaveCoeffs(lags.tempsR1 ?? lags.temps1);
+  const coeffsR2 = computeWaveCoeffs(lags.tempsR2 ?? lags.temps2);
   const mi01 = computeModIndex(lags.temps0, lags.temps1) + p.pressureFMBoost;
   const mi12 = computeModIndex(lags.temps1, lags.temps2) + p.pressureFMBoost*0.7;
 
@@ -553,9 +555,19 @@ async function buildEngine(p, sessionKey, lags) {
   const panL = new Tone.Panner(-0.78); panL.connect(masterFade);
   const panR = new Tone.Panner( 0.78); panR.connect(masterFade);
 
-  function makeOscTrio(parts, panner) {
-    const [o0,o1,o2] = parts.map((ps,i) =>
-      new Tone.OmniOscillator({ type:'custom', partials:ps, frequency:freqs0[i] }));
+  function applyWave(osc, coeffs) {
+    if (!osc._oscillator) return;
+    const ctx = Tone.getContext().rawContext;
+    const wave = ctx.createPeriodicWave(
+      Float32Array.from(coeffs.real), Float32Array.from(coeffs.imag),
+      { disableNormalization: true }
+    );
+    osc._oscillator.setPeriodicWave(wave);
+  }
+
+  function makeOscTrio(coeffsList, panner) {
+    const [o0,o1,o2] = coeffsList.map((c,i) =>
+      new Tone.Oscillator({ frequency: freqs0[i] }));
     const [g0,g1,g2] = [0.42,0.32,0.22].map(g => new Tone.Gain(g * p.brightness));
     o0.connect(g0); g0.connect(panner);
     o1.connect(g1); g1.connect(panner);
@@ -564,19 +576,23 @@ async function buildEngine(p, sessionKey, lags) {
     const fm12  = new Tone.Gain(mi12  * freqs0[1]);
     o1.connect(fm01); fm01.connect(o0.frequency);
     o2.connect(fm12);  fm12.connect(o1.frequency);
-    return { oscs:[o0,o1,o2], gains:[g0,g1,g2], fm01, fm12 };
+    const initC = coeffsList;
+    function initWaves() { [o0,o1,o2].forEach((o,i) => applyWave(o, initC[i])); }
+    function applyCoeffs(cl) { [o0,o1,o2].forEach((o,i) => applyWave(o, cl[i])); }
+    return { oscs:[o0,o1,o2], gains:[g0,g1,g2], fm01, fm12, initWaves, applyCoeffs };
   }
 
-  const trioL = makeOscTrio([partials0,  partials1,  partials2 ], panL);
-  const trioR = makeOscTrio([partialsR0, partialsR1, partialsR2], panR);
+  const trioL = makeOscTrio([coeffs0,  coeffs1,  coeffs2 ], panL);
+  const trioR = makeOscTrio([coeffsR0, coeffsR1, coeffsR2], panR);
 
   // Wavetable morph: lerp curParts → tgtParts per 60ms tick
   // Alpha is adaptive: computed each tick from tlSpeed so convergence is always ~99% per step
   // R always uses a slower alpha (×0.6) to create natural stereo lag
-  let curPartsL = [partials0.slice(),  partials1.slice(),  partials2.slice()];
-  let tgtPartsL = [partials0.slice(),  partials1.slice(),  partials2.slice()];
-  let curPartsR = [partialsR0.slice(), partialsR1.slice(), partialsR2.slice()];
-  let tgtPartsR = [partialsR0.slice(), partialsR1.slice(), partialsR2.slice()];
+  const cloneC = c => ({ real:[...c.real], imag:[...c.imag] });
+  let curCoeffsL = [coeffs0,  coeffs1,  coeffs2 ].map(cloneC);
+  let tgtCoeffsL = [coeffs0,  coeffs1,  coeffs2 ].map(cloneC);
+  let curCoeffsR = [coeffsR0, coeffsR1, coeffsR2].map(cloneC);
+  let tgtCoeffsR = [coeffsR0, coeffsR1, coeffsR2].map(cloneC);
   let morphTimer = null;
   // ticksPerStep = (stepDuration_s × 1000) / 60ms; alpha for 99% convergence in N ticks:
   // alpha = 1 - 0.01^(1/N); clamped so it's never too slow (1×) or too snappy (>100×)
@@ -635,109 +651,41 @@ async function buildEngine(p, sessionKey, lags) {
 
   // sub pulse removed — was a constant-pitch sine overlay
 
-  // ── Rain ─────────────────────────────────────────────
-  const rainSynth    = new Tone.MetalSynth({
-    envelope:{attack:0.001,decay:0.055,release:0.03},
-    harmonicity:5.1, modulationIndex:16, resonance:3000, octaves:1.5
-  });
-  const rainDropGain = new Tone.Gain(0.085);
-  const rainRev      = new Tone.Reverb({ decay:1.4, wet:0.60 });
-  await rainRev.ready;
-  rainSynth.chain(rainDropGain, rainRev, masterFade);
+  // ── Rain noise ────────────────────────────────────────
   const rainNoiseN   = new Tone.Noise('pink');
   const rainNoiseBP  = new Tone.Filter({ type:'bandpass', frequency:1100, Q:0.9 });
   const rainNoiseG   = new Tone.Gain(p.rainNoiseLvl);
   rainNoiseN.chain(rainNoiseBP, rainNoiseG, masterFade);
-  let rainTimer = null;
-  let rainTargetMs = null; // target interval — morphed in morphTick for smooth rate transitions
-  let curRainMs = null;
-  function scheduleRain(ms) {
-    rainTargetMs = ms;
-    if (!curRainMs) curRainMs = ms; // snap to target on first call
-    if (rainTimer) return; // already running — morphTick will adjust rate
-    if (!ms || !audioPlaying) return;
-    const fire = () => {
-      if (!audioPlaying) { rainTimer=null; return; }
-      // Soft gate: only fire drop if rain noise has actually faded in
-      if (curAudioL && curAudioL.rainNoise > 0.01) {
-        rainSynth.frequency.value = 220 + Math.random()*900;
-        rainSynth.triggerAttackRelease('32n');
-      }
-      // Morph current interval toward target
-      if (curRainMs && rainTargetMs) curRainMs += (rainTargetMs - curRainMs) * 0.15;
-      rainTimer = setTimeout(fire, (curRainMs||ms) * (0.6 + Math.random()*0.8));
-    };
-    rainTimer = setTimeout(fire, Math.random() * (curRainMs||ms));
-  }
-  function stopRain() {
-    rainTargetMs = null; curRainMs = null;
-    if (rainTimer){clearTimeout(rainTimer);rainTimer=null;}
-  }
-
-  // ── Snow ─────────────────────────────────────────────
-  const snowSynth = new Tone.Synth({
-    oscillator:{type:'triangle'},
-    envelope:{attack:0.002,decay:0.5,sustain:0,release:0.8}
-  });
-  const snowGain = new Tone.Gain(0.038);
-  const snowRev  = new Tone.Reverb({decay:5, wet:0.78});
-  await snowRev.ready;
-  snowSynth.chain(snowGain, snowRev, masterFade);
-  let snowTimer = null;
-  const snowFreqPool = [sessionKey.rootHz*4, sessionKey.rootHz*6,
-                        sessionKey.rootHz*8, sessionKey.rootHz*4.5];
-  function scheduleSnow(ms) {
-    if (snowTimer){clearTimeout(snowTimer);snowTimer=null;}
-    if (!ms||!audioPlaying) return;
-    const fire=()=>{
-      if(!audioPlaying)return;
-      snowSynth.triggerAttackRelease(snowFreqPool[Math.floor(Math.random()*snowFreqPool.length)],'8n');
-      snowTimer=setTimeout(fire, ms+(Math.random()-.5)*ms*.7);
-    };
-    snowTimer=setTimeout(fire, Math.random()*ms);
-  }
-  function stopSnow(){if(snowTimer){clearTimeout(snowTimer);snowTimer=null;}}
-
-  // ── Sparkle (high metallic plucks) ────────────────────
-  const sparkleSynth = new Tone.MetalSynth({
-    envelope:{attack:0.001, decay:0.18, release:0.08},
-    harmonicity:9.2, modulationIndex:28, resonance:7000, octaves:0.4
-  });
-  const sparkleGain = new Tone.Gain(0.048);
-  const sparkleRev  = new Tone.Reverb({ decay:3.5, wet:0.92 });
-  await sparkleRev.ready;
-  sparkleSynth.chain(sparkleGain, sparkleRev, masterFade);
-  let sparkleTimer = null;
-  function scheduleSparkle(rate) {
-    if (sparkleTimer) { clearTimeout(sparkleTimer); sparkleTimer=null; }
-    if (rate<=0||!audioPlaying) return;
-    const fire = () => {
+  // ── Loudness rider (slow AGC toward −14 dB ≈ LUFS) ──
+  const TARGET_DB = -14;
+  let lufsTimer = null;
+  function startLufs() {
+    lufsTimer = setInterval(() => {
       if (!audioPlaying) return;
-      sparkleSynth.frequency.value = 1500 + Math.random()*5000;
-      sparkleSynth.triggerAttackRelease('64n');
-      sparkleTimer = setTimeout(fire, (1/rate)*1000*(0.3+Math.random()*1.4));
-    };
-    sparkleTimer = setTimeout(fire, Math.random()*(1/rate)*2000);
+      const db = meter.getValue();
+      if (typeof db === 'number' && isFinite(db) && db > -80) {
+        const diff = TARGET_DB - db;
+        const newGain = clamp(loudnessGain.gain.value * Math.pow(10, diff * 0.05 / 20), 0.05, 8);
+        loudnessGain.gain.rampTo(newGain, 3);
+      }
+    }, 2000);
   }
-  function stopSparkle(){if(sparkleTimer){clearTimeout(sparkleTimer);sparkleTimer=null;}}
-
-
+  function stopLufs() { if (lufsTimer) { clearInterval(lufsTimer); lufsTimer = null; } }
 
   // ── Start / Stop ──────────────────────────────────────
   function startAll() {
     [...trioL.oscs, ...trioR.oscs].forEach(o=>o.start());
+    trioL.initWaves(); trioR.initWaves();
     windBassN.start(); windMidN.start(); windHighN.start();
     gustNoise.start(); rainNoiseN.start();
     masterFade.gain.rampTo(0.72, 5);
     startMorph();
-    scheduleSparkle(p.sparkleRate);
+    startLufs();
     scheduleGust(p.gustRate);
-    if (p.rainOn)  scheduleRain(p.rainIntervalMs);
-    if (p.isSnow)  scheduleSnow(p.snowIntervalMs);
   }
 
   function stopAll(fadeTime=2.5) {
-    stopRain(); stopSnow(); stopSparkle(); stopGust(); stopMorph();
+    stopGust(); stopMorph(); stopLufs();
     masterFade.gain.rampTo(0, fadeTime);
     setTimeout(()=>{
       try {
@@ -812,32 +760,35 @@ async function buildEngine(p, sessionKey, lags) {
     // Rain noise — always morphed; gate MetalSynth drops by morphed level
     rainNoiseG.gain.value = curAudioL.rainNoise;
 
-    // Waveform partials — L fast, R slow
+    // Waveform coefficients — L fast, R slow
     let dirtyL = false, dirtyR = false;
     for (let v=0;v<3;v++) {
-      for (let h=0;h<curPartsL[v].length;h++) {
-        const dL = tgtPartsL[v][h]-curPartsL[v][h];
-        if (Math.abs(dL)>0.0005){curPartsL[v][h]+=dL*AL;dirtyL=true;}else curPartsL[v][h]=tgtPartsL[v][h];
-        const dR = tgtPartsR[v][h]-curPartsR[v][h];
-        if (Math.abs(dR)>0.0005){curPartsR[v][h]+=dR*AR;dirtyR=true;}else curPartsR[v][h]=tgtPartsR[v][h];
+      const nH = curCoeffsL[v].real.length;
+      for (let h=0;h<nH;h++) {
+        const drL=tgtCoeffsL[v].real[h]-curCoeffsL[v].real[h];
+        const diL=tgtCoeffsL[v].imag[h]-curCoeffsL[v].imag[h];
+        if(Math.abs(drL)>0.0005){curCoeffsL[v].real[h]+=drL*AL;dirtyL=true;}else curCoeffsL[v].real[h]=tgtCoeffsL[v].real[h];
+        if(Math.abs(diL)>0.0005){curCoeffsL[v].imag[h]+=diL*AL;dirtyL=true;}else curCoeffsL[v].imag[h]=tgtCoeffsL[v].imag[h];
+        const drR=tgtCoeffsR[v].real[h]-curCoeffsR[v].real[h];
+        const diR=tgtCoeffsR[v].imag[h]-curCoeffsR[v].imag[h];
+        if(Math.abs(drR)>0.0005){curCoeffsR[v].real[h]+=drR*AR;dirtyR=true;}else curCoeffsR[v].real[h]=tgtCoeffsR[v].real[h];
+        if(Math.abs(diR)>0.0005){curCoeffsR[v].imag[h]+=diR*AR;dirtyR=true;}else curCoeffsR[v].imag[h]=tgtCoeffsR[v].imag[h];
       }
     }
-    if (dirtyL) try { trioL.oscs[0].partials=curPartsL[0]; trioL.oscs[1].partials=curPartsL[1]; trioL.oscs[2].partials=curPartsL[2]; } catch(e){}
-    if (dirtyR) try { trioR.oscs[0].partials=curPartsR[0]; trioR.oscs[1].partials=curPartsR[1]; trioR.oscs[2].partials=curPartsR[2]; } catch(e){}
+    if (dirtyL) try { trioL.applyCoeffs(curCoeffsL); } catch(e){}
+    if (dirtyR) try { trioR.applyCoeffs(curCoeffsR); } catch(e){}
   }
 
   // ── Update (called every timeline step) ──────────────
   function updateParams(np, t, newLags) {
     // Update waveform targets
     if (newLags) {
-      // L targets from current lag windows
-      tgtPartsL[0] = computePartials(newLags.temps0);
-      tgtPartsL[1] = computePartials(newLags.temps1);
-      tgtPartsL[2] = computePartials(newLags.temps2);
-      // R targets from 2h-offset windows
-      tgtPartsR[0] = computePartials(newLags.tempsR0 ?? newLags.temps0);
-      tgtPartsR[1] = computePartials(newLags.tempsR1 ?? newLags.temps1);
-      tgtPartsR[2] = computePartials(newLags.tempsR2 ?? newLags.temps2);
+      tgtCoeffsL[0] = computeWaveCoeffs(newLags.temps0);
+      tgtCoeffsL[1] = computeWaveCoeffs(newLags.temps1);
+      tgtCoeffsL[2] = computeWaveCoeffs(newLags.temps2);
+      tgtCoeffsR[0] = computeWaveCoeffs(newLags.tempsR0 ?? newLags.temps0);
+      tgtCoeffsR[1] = computeWaveCoeffs(newLags.tempsR1 ?? newLags.temps1);
+      tgtCoeffsR[2] = computeWaveCoeffs(newLags.tempsR2 ?? newLags.temps2);
       const nmi01 = computeModIndex(newLags.temps0, newLags.temps1) + np.pressureFMBoost;
       const nmi12 = computeModIndex(newLags.temps1, newLags.temps2) + np.pressureFMBoost*0.7;
       tgtAudio.fm01g = nmi01 * np.padNotes[0];
@@ -855,16 +806,13 @@ async function buildEngine(p, sessionKey, lags) {
     tgtAudio.rainNoise  = np.rainNoiseLvl;
 
     // Event-based sounds (scheduled, not morphed)
-    if (np.rainOn) scheduleRain(np.rainIntervalMs); else stopRain();
-    if (np.isSnow) scheduleSnow(np.snowIntervalMs); else stopSnow();
-    scheduleSparkle(np.sparkleRate);
     scheduleGust(np.gustRate);
   }
 
   function dispose() {
-    stopRain(); stopSnow(); stopSparkle(); stopGust(); stopMorph();
+    stopGust(); stopMorph(); stopLufs();
     const all = [
-      masterFade, masterFilter, masterReverb, masterLimiter,
+      masterFade, masterFilter, masterReverb, loudnessGain, masterCompressor, masterLimiter, meter,
       panL, panR,
       ...trioL.oscs, ...trioL.gains, trioL.fm01, trioL.fm12,
       ...trioR.oscs, ...trioR.gains, trioR.fm01, trioR.fm12,
@@ -872,9 +820,7 @@ async function buildEngine(p, sessionKey, lags) {
       windMidN, windMidBP, windMidLFO, windMidG,
       windHighN, windHighHP, windHighG,
       gustNoise, gustFilter, gustEnv, gustPan, gustRev, gustOut,
-      rainSynth, rainDropGain, rainRev, rainNoiseN, rainNoiseBP, rainNoiseG,
-      snowSynth, snowGain, snowRev,
-      sparkleSynth, sparkleGain, sparkleRev,
+      rainNoiseN, rainNoiseBP, rainNoiseG,
     ];
     all.forEach(n=>{try{n.dispose();}catch(e){}});
   }
@@ -886,9 +832,9 @@ async function buildEngine(p, sessionKey, lags) {
     // FM trio detune is applied in morphTick so wind offset is always included
   }
 
-  const getPartials = () => ({ L: curPartsL, R: curPartsR });
+  const getCoeffs = () => ({ L: curCoeffsL, R: curCoeffsR });
 
-  return { startAll, stopAll, updateParams, setPitchCents, getPartials, dispose, analyser };
+  return { startAll, stopAll, updateParams, setPitchCents, getCoeffs, dispose, analyser };
 }
 
 // ══════════════════════════════════════════════════════
@@ -905,16 +851,17 @@ function startWave() {
     ctx.clearRect(0,0,W,H);
     if (eng && audioPlaying) {
       const data=eng.analyser.getValue();
+      const peak=Math.max(...data.map(Math.abs), 0.001);
       const grad=ctx.createLinearGradient(0,0,W,0);
       grad.addColorStop(0,'rgba(123,159,255,0)');
       grad.addColorStop(.3,'rgba(123,159,255,.8)');
       grad.addColorStop(.7,'rgba(192,132,252,.8)');
       grad.addColorStop(1,'rgba(192,132,252,0)');
       ctx.beginPath(); ctx.strokeStyle=grad; ctx.lineWidth=1.5;
-      data.forEach((v,i)=>{const x=(i/data.length)*W,y=H/2+v*H*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+      data.forEach((v,i)=>{const x=(i/data.length)*W,y=H/2+(v/peak)*H*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
       ctx.stroke();
       ctx.beginPath(); ctx.strokeStyle='rgba(123,159,255,.1)'; ctx.lineWidth=5;
-      data.forEach((v,i)=>{const x=(i/data.length)*W,y=H/2+v*H*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+      data.forEach((v,i)=>{const x=(i/data.length)*W,y=H/2+(v/peak)*H*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
       ctx.stroke();
     } else {
       phase+=.012;
@@ -933,11 +880,15 @@ const OSC_IDS = ['oscL0','oscL1','oscL2','oscR0','oscR1','oscR2'];
 const oscCanvases = OSC_IDS.map(id => document.getElementById(id));
 let oscRaf = null;
 
-function synthWave(parts, N=128) {
+function synthWave(coeffs, N=128) {
   const wave = new Float32Array(N);
+  const {real, imag} = coeffs;
   for (let i=0; i<N; i++) {
     let y = 0;
-    for (let k=0; k<parts.length; k++) y += parts[k] * Math.sin((k+1)*2*Math.PI*i/N);
+    for (let k=1; k<real.length; k++) {
+      const angle = k * 2*Math.PI * i / N;
+      y += real[k]*Math.cos(angle) - imag[k]*Math.sin(angle);
+    }
     wave[i] = y;
   }
   return wave;
@@ -949,16 +900,16 @@ function drawOscPane() {
     oscRaf = requestAnimationFrame(drawOscPane);
     return;
   }
-  const {L, R} = eng.getPartials();
-  const allParts = [...L, ...R];
-  allParts.forEach((parts, vi) => {
+  const {L, R} = eng.getCoeffs();
+  const allCoeffs = [...L, ...R];
+  allCoeffs.forEach((coeffs, vi) => {
     const c = oscCanvases[vi];
     if (!c) return;
     c.width = c.offsetWidth || 60; c.height = c.offsetHeight || 44;
     const W = c.width, H = c.height;
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, W, H);
-    const wave = synthWave(parts);
+    const wave = synthWave(coeffs);
     const mx = Math.max(...wave.map(Math.abs), 0.01);
     const isR = vi >= 3;
     const col = isR ? 'rgba(192,132,252,' : 'rgba(123,159,255,';
@@ -1188,6 +1139,24 @@ function renderTimelineUI() {
   const fmt=t=>{if(!t)return'';const d=new Date(t+'Z');return multi?d.toLocaleDateString(undefined,{month:'short',day:'numeric',timeZone:'UTC'}):t.slice(11,16);};
   if(timeline[0])document.getElementById('tlStart').textContent=fmt(timeline[0].time);
   if(timeline[timeline.length-1])document.getElementById('tlEnd').textContent=fmt(timeline[timeline.length-1].time);
+  updateOscLabels();
+}
+
+function updateOscLabels() {
+  if (!timeline.length) return;
+  const N = timeline.length;
+  const lagHours = [0, 24, 48, 12, 36, 60];
+  const ids = ['oscLblL0','oscLblL1','oscLblL2','oscLblR0','oscLblR1','oscLblR2'];
+  ids.forEach((id, i) => {
+    let read = tlIdx - lagHours[i];
+    if (read < 0) read = ((read % N) + N) % N;
+    const entry = timeline[Math.min(read, N-1)];
+    const el = document.getElementById(id);
+    if (el && entry?.time) {
+      const d = new Date(entry.time + 'Z');
+      el.textContent = d.toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', timeZone:'UTC'});
+    }
+  });
 }
 
 function updateBadge(entry) {
@@ -1239,7 +1208,7 @@ function defaultStartDate(days) {
   const d = new Date(); d.setUTCDate(d.getUTCDate() - days);
   return d.toISOString().slice(0,10);
 }
-dateInput.value = defaultStartDate(30); // matches default "1 month"
+dateInput.value = defaultStartDate(7); // matches default "1 week"
 
 durationSel.addEventListener('change', () => {
   dateInput.value = defaultStartDate(parseInt(durationSel.value));
