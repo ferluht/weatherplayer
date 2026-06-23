@@ -551,9 +551,9 @@ async function buildEngine(p, sessionKey, lags) {
   const mi01 = computeModIndex(lags.temps0, lags.temps1) + p.pressureFMBoost;
   const mi12 = computeModIndex(lags.temps1, lags.temps2) + p.pressureFMBoost*0.7;
 
-  const freqs0 = p.padNotes.slice(0,3);
-  const panL = new Tone.Panner(-0.78); panL.connect(masterFade);
-  const panR = new Tone.Panner( 0.78); panR.connect(masterFade);
+  const freqs0 = [p.padNotes[0], p.padNotes[1]/2, p.padNotes[2]];
+  const panL = new Tone.Panner(-1); panL.connect(masterFade);
+  const panR = new Tone.Panner( 1); panR.connect(masterFade);
 
   function applyWave(osc, coeffs) {
     if (!osc._oscillator) return;
@@ -1047,12 +1047,12 @@ const stepDuration = () => 60/tlSpeed; // real seconds per data hour
 
 function computeLagWindows(idx) {
   return {
-    temps0:  getTemperatureWindow(timeline, idx, 0),   // L: now, 1 day ago, 2 days ago
-    temps1:  getTemperatureWindow(timeline, idx, 24),
-    temps2:  getTemperatureWindow(timeline, idx, 48),
-    tempsR0: getTemperatureWindow(timeline, idx, 12),  // R: 12h offset from L
-    tempsR1: getTemperatureWindow(timeline, idx, 36),
-    tempsR2: getTemperatureWindow(timeline, idx, 60),
+    temps0:  getTemperatureWindow(timeline, idx, 0,   24),  // L: 24h daily cycle
+    temps1:  getTemperatureWindow(timeline, idx, 24,  72),  // L: 3-day trend
+    temps2:  getTemperatureWindow(timeline, idx, 48,  48),  // L: 2-day arc
+    tempsR0: getTemperatureWindow(timeline, idx, 12,  24),  // R: 24h, 12h offset
+    tempsR1: getTemperatureWindow(timeline, idx, 36,  72),  // R: 3-day, 12h offset
+    tempsR2: getTemperatureWindow(timeline, idx, 60,  48),  // R: 2-day, 12h offset
   };
 }
 
