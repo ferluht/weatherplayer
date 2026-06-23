@@ -1,0 +1,1375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeatherPlayer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#07070f;--panel:rgba(255,255,255,.033);--panel2:rgba(255,255,255,.058);
+  --border:rgba(255,255,255,.072);--text:#ddddf4;--dim:rgba(221,221,244,.42);
+  --accent:#7b9fff;--accent2:#c084fc;--green:#4ade80;
+}
+html{font-size:15px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+#genCanvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+.page{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:0 18px 60px}
+header{padding:34px 0 22px;text-align:center}
+h1{font-size:1.9rem;font-weight:200;letter-spacing:.18em}
+h1 em{font-style:normal;color:var(--accent)}
+.tagline{color:var(--dim);font-size:.8rem;margin-top:6px;letter-spacing:.06em}
+.search-box{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:15px;margin-bottom:13px}
+.search-row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start}
+.loc-wrap{position:relative;flex:1;min-width:180px}
+input[type=text],input[type=date]{
+  width:100%;background:rgba(255,255,255,.045);border:1px solid var(--border);
+  border-radius:9px;color:var(--text);padding:9px 12px;font-size:.86rem;outline:none;transition:border-color .2s
+}
+input:focus{border-color:var(--accent)}
+input[type=date]{width:auto;min-width:125px}
+input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1) opacity(.4);cursor:pointer}
+input::placeholder{color:var(--dim)}
+select{background:rgba(255,255,255,.045);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:9px 12px;font-size:.86rem;outline:none;cursor:pointer;transition:border-color .2s}
+select:focus{border-color:var(--accent)}
+select option{background:#0e0e1e;color:var(--text)}
+.suggestions{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#0e0e1e;border:1px solid var(--border);border-radius:9px;z-index:200;overflow:hidden;display:none}
+.suggestions.open{display:block}
+.sug-item{padding:8px 12px;cursor:pointer;font-size:.83rem;transition:background .1s}
+.sug-item:hover{background:var(--panel2)}
+.sug-sub{color:var(--dim);font-size:.75rem;margin-left:5px}
+button{background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 18px;font-size:.86rem;cursor:pointer;transition:opacity .18s,transform .1s;white-space:nowrap}
+button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{opacity:.35;cursor:default}
+/* now badge */
+#nowBadge{background:rgba(123,159,255,.08);border:1px solid rgba(123,159,255,.2);border-radius:12px;padding:10px 16px;margin-bottom:13px;display:flex;align-items:center;gap:12px}
+#nowBadge.hidden{display:none}
+.nb-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s ease-in-out infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.nb-icon{font-size:1.5rem;flex-shrink:0}
+.nb-info{flex:1;min-width:0}
+.nb-place{font-size:.9rem;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nb-time{font-size:.75rem;color:var(--dim);margin-top:2px}
+.nb-cond{font-size:.82rem;color:var(--accent);margin-top:2px}
+/* grid */
+.main-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+@media(max-width:680px){.main-grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:17px}
+.ptitle{font-size:.68rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:13px}
+/* weather */
+.w-loc{font-size:.95rem;font-weight:400;margin-bottom:2px}
+.w-date{font-size:.76rem;color:var(--dim);margin-bottom:11px}
+.w-hero{display:flex;align-items:center;gap:13px;margin-bottom:14px}
+.w-icon{font-size:3rem;line-height:1}
+.w-temp{font-size:2.6rem;font-weight:200}
+.w-desc{color:var(--dim);font-size:.83rem;margin-top:3px}
+.w-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.w-stat{background:rgba(255,255,255,.025);border-radius:8px;padding:8px 10px}
+.sl{font-size:.67rem;color:var(--dim);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px}
+.sv{font-size:.95rem;font-weight:300}
+/* mappings */
+.key-badge{display:inline-block;background:rgba(123,159,255,.1);border:1px solid rgba(123,159,255,.28);color:var(--accent);font-size:.7rem;padding:2px 9px;border-radius:20px;margin-right:5px}
+.chord-badge{display:inline-block;background:rgba(192,132,252,.1);border:1px solid rgba(192,132,252,.28);color:var(--accent2);font-size:.7rem;padding:2px 9px;border-radius:20px;margin-bottom:12px}
+.map-row{margin-bottom:10px}
+.map-hdr{display:flex;justify-content:space-between;font-size:.77rem;margin-bottom:4px}
+.map-lbl{color:var(--dim)}
+.map-val{color:var(--accent);font-family:monospace;font-size:.73rem}
+.bar-bg{height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width 1.8s ease}
+/* right panel */
+.right-stack{display:flex;flex-direction:column;gap:13px}
+#waveCanvas{width:100%;height:80px;display:block;border-radius:8px;background:rgba(0,0,0,.25);margin-bottom:12px}
+.tl-wrap{margin-bottom:12px}
+.tl-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:2px;cursor:pointer;margin-bottom:7px}
+.tl-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width .4s linear;pointer-events:none}
+.tl-handle{position:absolute;top:50%;transform:translate(-50%,-50%);width:12px;height:12px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(123,159,255,.6);cursor:grab;pointer-events:none;transition:left .4s linear}
+.tl-labels{display:flex;justify-content:space-between;font-size:.68rem;color:var(--dim)}
+.tl-current{text-align:center;font-size:.72rem;color:var(--accent);margin-bottom:6px;min-height:1em}
+.osc-pane{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:12px}
+.osc-cell{position:relative;background:rgba(0,0,0,.25);border-radius:6px;overflow:hidden}
+.osc-cell canvas{display:block;width:100%;height:44px}
+.osc-lbl{position:absolute;top:3px;left:5px;font-size:.58rem;color:rgba(123,159,255,.55);pointer-events:none;font-family:monospace}
+.pitch-row{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.pitch-label{font-size:.7rem;color:var(--dim);white-space:nowrap;min-width:36px}
+.pitch-val{font-size:.68rem;color:var(--accent);font-family:monospace;min-width:28px;text-align:right}
+#pitchSlider{flex:1;-webkit-appearance:none;appearance:none;height:3px;border-radius:2px;background:rgba(255,255,255,.12);outline:none;cursor:pointer}
+#pitchSlider::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--accent);box-shadow:0 0 6px rgba(123,159,255,.5);cursor:grab}
+#pitchSlider::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--accent);border:none;cursor:grab}
+.speed-row{display:flex;gap:5px;align-items:center;margin-bottom:11px}
+.speed-label{font-size:.7rem;color:var(--dim);margin-right:2px}
+.speed-btn{background:rgba(255,255,255,.05);color:var(--dim);border:1px solid var(--border);font-size:.72rem;padding:4px 9px;border-radius:6px;transition:all .15s}
+.speed-btn.active{background:rgba(123,159,255,.18);color:var(--accent);border-color:rgba(123,159,255,.4)}
+.play-row{display:flex;gap:8px}
+#playBtn{flex:1;padding:12px;font-size:.9rem;letter-spacing:.04em;border-radius:11px}
+#stepBtn{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:11px;padding:12px 14px;font-size:.9rem}
+#stepBtn:hover{border-color:var(--accent)}
+.status{font-size:.74rem;color:var(--dim);text-align:center;margin-top:8px;min-height:1.1em}
+/* idle / loading */
+.idle{text-align:center;padding:60px 20px}
+.idle .globe{font-size:3rem;margin-bottom:14px}
+.idle p{color:var(--dim);font-size:.88rem}
+.presets{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:16px}
+.preset{background:var(--panel);color:var(--dim);border:1px solid var(--border);font-size:.78rem;padding:6px 13px;border-radius:20px;transition:all .15s}
+.preset:hover{color:var(--text);border-color:var(--accent);background:rgba(123,159,255,.08)}
+.loading{text-align:center;padding:60px;color:var(--dim)}
+.spinner{display:inline-block;width:26px;height:26px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="genCanvas"></canvas>
+<div class="page">
+  <header>
+    <h1>Weather<em>Player</em></h1>
+    <p class="tagline">Atmospheric data → ambient soundscape</p>
+  </header>
+
+  <div class="search-box">
+    <div class="search-row">
+      <div class="loc-wrap">
+        <input type="text" id="locInput" placeholder="Search location…" autocomplete="off"/>
+        <div class="suggestions" id="sugg"></div>
+      </div>
+      <input type="date" id="dateInput"/>
+      <select id="durationSel">
+        <option value="1">1 day</option>
+        <option value="3">3 days</option>
+        <option value="7">1 week</option>
+        <option value="30" selected>1 month</option>
+        <option value="90">3 months</option>
+        <option value="365">1 year</option>
+      </select>
+      <button id="loadBtn">Load</button>
+    </div>
+  </div>
+
+  <div id="nowBadge" class="hidden">
+    <div class="nb-dot"></div>
+    <div class="nb-icon" id="nbIcon">☀️</div>
+    <div class="nb-info">
+      <div class="nb-place" id="nbPlace">—</div>
+      <div class="nb-time" id="nbTime">—</div>
+      <div class="nb-cond" id="nbCond">—</div>
+    </div>
+  </div>
+
+  <div id="idleView">
+    <div class="idle">
+      <div class="globe">🌍</div>
+      <p>Choose a location and date range — one key, one month, evolving complexity</p>
+      <div class="presets">
+        <button class="preset" data-city="London">London</button>
+        <button class="preset" data-city="Reykjavik">Reykjavík</button>
+        <button class="preset" data-city="Mumbai">Mumbai</button>
+        <button class="preset" data-city="Yakutsk">Yakutsk</button>
+        <button class="preset" data-city="Honolulu">Honolulu</button>
+        <button class="preset" data-city="Ushuaia">Ushuaia</button>
+        <button class="preset" data-city="Sahara">Sahara</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loadingView" class="hidden">
+    <div class="loading"><div class="spinner"></div><br>Fetching weather data…</div>
+  </div>
+
+  <div id="mainView" class="hidden">
+    <div class="main-grid">
+      <div>
+        <div class="panel" id="wPanel"></div>
+        <div class="panel" id="mPanel" style="margin-top:13px"></div>
+      </div>
+      <div class="right-stack">
+        <div class="panel">
+          <div class="ptitle">Waveform</div>
+          <canvas id="waveCanvas"></canvas>
+          <div class="osc-pane" id="oscPane">
+            <div class="osc-cell"><canvas id="oscL0"></canvas><span class="osc-lbl">L₁</span></div>
+            <div class="osc-cell"><canvas id="oscL1"></canvas><span class="osc-lbl">L₂</span></div>
+            <div class="osc-cell"><canvas id="oscL2"></canvas><span class="osc-lbl">L₃</span></div>
+            <div class="osc-cell"><canvas id="oscR0"></canvas><span class="osc-lbl">R₁</span></div>
+            <div class="osc-cell"><canvas id="oscR1"></canvas><span class="osc-lbl">R₂</span></div>
+            <div class="osc-cell"><canvas id="oscR2"></canvas><span class="osc-lbl">R₃</span></div>
+          </div>
+          <div class="ptitle" style="margin-bottom:8px">Timeline</div>
+          <div class="tl-wrap">
+            <div class="tl-current" id="tlCurrent"></div>
+            <div class="tl-track" id="tlTrack">
+              <div class="tl-fill" id="tlFill" style="width:0%"></div>
+              <div class="tl-handle" id="tlHandle" style="left:0%"></div>
+            </div>
+            <div class="tl-labels"><span id="tlStart"></span><span id="tlEnd"></span></div>
+          </div>
+          <div class="pitch-row">
+            <span class="pitch-label">Pitch:</span>
+            <input type="range" id="pitchSlider" min="-24" max="24" value="0" step="1">
+            <span class="pitch-val" id="pitchVal">0</span>
+          </div>
+          <div class="speed-row">
+            <span class="speed-label">Speed:</span>
+            <button class="speed-btn" data-speed="1">1×</button>
+            <button class="speed-btn active" data-speed="4">4×</button>
+            <button class="speed-btn" data-speed="10">10×</button>
+            <button class="speed-btn" data-speed="30">30×</button>
+            <button class="speed-btn" data-speed="60">60×</button>
+          </div>
+          <div class="play-row">
+            <button id="playBtn">▶ &nbsp;Play</button>
+            <button id="stepBtn" title="Step +1h">+1h</button>
+          </div>
+          <p class="status" id="statusEl">Ready</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════════════
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const lerp  = (a,b,t) => a + (b-a)*t;
+const midiToHz = m => 440 * Math.pow(2, (m-69)/12);
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+// ══════════════════════════════════════════════════════
+//  WEATHER API
+// ══════════════════════════════════════════════════════
+const GEO = 'https://geocoding-api.open-meteo.com/v1/search';
+const WX  = 'https://api.open-meteo.com/v1/forecast';
+const ARC = 'https://archive-api.open-meteo.com/v1/archive';
+const WPARAMS = 'temperature_2m,wind_speed_10m,wind_direction_10m,cloud_cover,precipitation,relative_humidity_2m,surface_pressure,weather_code';
+
+async function geocode(q) {
+  const d = await (await fetch(`${GEO}?name=${encodeURIComponent(q)}&count=5&language=en&format=json`)).json();
+  return d.results || [];
+}
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0,10);
+}
+function isArchive(dateStr) {
+  const t = new Date(); t.setDate(t.getDate()-6);
+  return new Date(dateStr) < t;
+}
+async function fetchHourly(lat, lon, startDate, endDate) {
+  const todayDate = new Date().toISOString().slice(0,10);
+  const effectiveEnd = endDate > todayDate ? todayDate : endDate;
+  const base = isArchive(startDate) ? ARC : WX;
+  const extra = isArchive(startDate) ? '' : '&forecast_days=16';
+  const url = `${base}?latitude=${lat}&longitude=${lon}&start_date=${startDate}&end_date=${effectiveEnd}&hourly=${WPARAMS}&timezone=UTC${extra}`;
+  const d = await (await fetch(url)).json();
+  if (!d.hourly) throw new Error('No data');
+  const h = d.hourly;
+  return h.time.map((t,i) => ({
+    time:t,
+    temperature_2m:       h.temperature_2m[i],
+    wind_speed_10m:       h.wind_speed_10m[i],
+    wind_direction_10m:   h.wind_direction_10m[i],
+    cloud_cover:          h.cloud_cover[i],
+    precipitation:        h.precipitation[i],
+    relative_humidity_2m: h.relative_humidity_2m[i],
+    surface_pressure:     h.surface_pressure[i],
+    weather_code:         h.weather_code[i],
+  }));
+}
+
+// ══════════════════════════════════════════════════════
+//  WEATHER DESCRIPTION
+// ══════════════════════════════════════════════════════
+const WX_MAP = {
+  0:['Clear sky','☀️'],1:['Mainly clear','🌤️'],2:['Partly cloudy','⛅'],3:['Overcast','☁️'],
+  45:['Fog','🌫️'],48:['Icy fog','🌫️'],
+  51:['Light drizzle','🌦️'],53:['Drizzle','🌦️'],55:['Dense drizzle','🌧️'],
+  61:['Slight rain','🌧️'],63:['Rain','🌧️'],65:['Heavy rain','🌧️'],
+  71:['Slight snow','🌨️'],73:['Snow','❄️'],75:['Heavy snow','❄️'],77:['Snow grains','🌨️'],
+  80:['Showers','🌦️'],81:['Rain showers','🌧️'],82:['Violent showers','⛈️'],
+  85:['Snow showers','🌨️'],86:['Heavy snow showers','❄️'],
+  95:['Thunderstorm','⛈️'],96:['Thunderstorm','⛈️'],99:['Thunderstorm','⛈️'],
+};
+const wxDesc = c => WX_MAP[c] || ['Unknown','🌡️'];
+
+// ══════════════════════════════════════════════════════
+//  SYNTHESIS MATH
+// ══════════════════════════════════════════════════════
+
+// DFT of temperature window → oscillator harmonic amplitudes (partials)
+function computePartials(temps, numHarmonics=8) {
+  const N = temps.length;
+  if (N < 4) return Array(numHarmonics).fill(0).map((_,i)=>i===0?1:0);
+  const mean = temps.reduce((a,b)=>a+b,0)/N;
+  const c = temps.map(t=>t-mean);
+  const amps = [];
+  for (let k=1; k<=numHarmonics; k++) {
+    let re=0, im=0;
+    for (let n=0; n<N; n++) {
+      const angle = 2*Math.PI*k*n/N;
+      re += c[n]*Math.cos(angle);
+      im -= c[n]*Math.sin(angle);
+    }
+    amps.push(Math.sqrt(re*re+im*im)/(N/2));
+  }
+  const mx = Math.max(...amps, 0.001);
+  const norm = amps.map(a=>a/mx);
+  // Ensure fundamental is audible (never fully silent)
+  if (norm[0] < 0.12) norm[0] = 0.12;
+  return norm;
+}
+
+// FM modulation index: proportional to temperature difference between windows
+function computeModIndex(temps0, temps1) {
+  const avg = ts => ts.reduce((a,b)=>a+b,0)/ts.length;
+  const rms = ts => { const m=avg(ts); return Math.sqrt(ts.reduce((a,b)=>a+(b-m)**2,0)/ts.length); };
+  const diff = Math.abs(avg(temps0)-avg(temps1));
+  const variability = (rms(temps0)+rms(temps1))/2;
+  // 0°C diff → 0; 15°C diff → ~0.6 modulation index
+  return clamp((diff+variability*0.3)/20, 0, 0.75);
+}
+
+// Extract a 24-hour backward window of temperatures ending at timeline[idx-lag]
+function getTemperatureWindow(timeline, idx, lag=0, size=24) {
+  const N = timeline.length;
+  const temps = [];
+  for (let i=size-1; i>=0; i--) {
+    // Wrap instead of clamp: if the lagged index goes before the start,
+    // read from the corresponding position at the end of the dataset.
+    // This gives each oscillator a distinct waveform even at idx=0.
+    let read = idx - lag - i;
+    if (read < 0) read = ((read % N) + N) % N;
+    if (read >= N) read = N - 1;
+    temps.push(timeline[read]?.w.temperature_2m ?? 10);
+  }
+  return temps;
+}
+
+// ── Session key (computed once per load) ──────────────
+function pickSessionKey(rawData) {
+  const temps  = rawData.map(w=>w.temperature_2m).filter(t=>t!=null);
+  const clouds = rawData.map(w=>w.cloud_cover??50);
+  const avgTemp  = temps.length ? temps.reduce((a,b)=>a+b,0)/temps.length : 10;
+  const avgCloud = clouds.reduce((a,b)=>a+b,0)/clouds.length;
+
+  // Map avg temp −25°C…35°C → MIDI 24 (C1) to 38 (D2) — low bass register
+  const rootRaw = Math.round(clamp(24 + (avgTemp+25)/60*14, 21, 40));
+  // Snap to natural notes (no sharps/flats as root)
+  const naturals = [21,22,24,26,28,29,31,33,35,36,38,40];
+  const rootMidi = naturals.reduce((b,r)=>Math.abs(r-rootRaw)<Math.abs(b-rootRaw)?r:b, naturals[0]);
+  const isMinor  = avgCloud > 58;
+  const rootHz   = midiToHz(rootMidi);
+  const rootName = NOTE_NAMES[rootMidi%12] + Math.floor(rootMidi/12-1);
+  return { rootMidi, rootHz, isMinor, keyName: rootName+(isMinor?' min':' maj'), avgTemp };
+}
+
+// ── Chord function within key ──────────────────────────
+// Wide-voiced shapes: root-5th-octave for FM oscs; +2 notes for pad
+const CHORD_SHAPES = {
+  'maj':  [0, 7,12,16,24],
+  'min':  [0, 7,12,15,24],
+  'maj7': [0, 7,11,19,23],
+  'min7': [0, 7,10,19,22],
+  'sus4': [0, 5,12,17,24],
+  'sus2': [0, 2, 7,14,24],
+  'dim7': [0, 6, 9,15,21],
+};
+
+function getChordInKey(code, isMinor) {
+  if (isMinor) {
+    if (code>=95) return {deg:7,  qual:'maj',  label:'V'   };
+    if (code>=85) return {deg:8,  qual:'maj7', label:'♭VI' };
+    if (code>=80) return {deg:10, qual:'min7', label:'♭VII'};
+    if (code>=71) return {deg:8,  qual:'maj',  label:'♭VI' };
+    if (code>=61) return {deg:5,  qual:'min7', label:'iv7' };
+    if (code>=51) return {deg:5,  qual:'min',  label:'iv'  };
+    if (code>=45) return {deg:5,  qual:'sus4', label:'iv˜' };
+    if (code===3) return {deg:0,  qual:'min',  label:'i'   };
+    if (code===2) return {deg:10, qual:'maj',  label:'♭VII'};
+    if (code===1) return {deg:3,  qual:'maj',  label:'♭III'};
+    return              {deg:8,  qual:'maj7', label:'♭VI' };
+  } else {
+    if (code>=95) return {deg:7,  qual:'maj',  label:'V'   };
+    if (code>=85) return {deg:5,  qual:'maj7', label:'IVΔ' };
+    if (code>=80) return {deg:7,  qual:'maj7', label:'VΔ'  };
+    if (code>=71) return {deg:0,  qual:'maj7', label:'IΔ'  };
+    if (code>=61) return {deg:9,  qual:'min7', label:'vi7' };
+    if (code>=51) return {deg:9,  qual:'min',  label:'vi'  };
+    if (code>=45) return {deg:2,  qual:'min7', label:'ii7' };
+    if (code===3) return {deg:9,  qual:'min7', label:'vi7' };
+    if (code===2) return {deg:5,  qual:'maj',  label:'IV'  };
+    if (code===1) return {deg:4,  qual:'min',  label:'iii' };
+    return              {deg:0,  qual:'maj',  label:'I'   };
+  }
+}
+
+// ── Main weather → music params ────────────────────────
+function weatherToMusic(w, sessionKey) {
+  const temp     = w.temperature_2m       ?? 10;
+  const wind     = w.wind_speed_10m       ?? 0;
+  const clouds   = w.cloud_cover          ?? 50;
+  const precip   = w.precipitation        ?? 0;
+  const humidity = w.relative_humidity_2m ?? 60;
+  const pressure = w.surface_pressure     ?? 1013;
+  const code     = w.weather_code         ?? 0;
+
+  const isStorm = code >= 95;
+  const isSnow  = (code >= 71 && code <= 77) || code >= 85;
+  const isFog   = code === 45 || code === 48;
+
+  // Fixed harmonic series above the session root — ratios 2:3:4:5:6
+  // Frequencies NEVER change; only timbre (waveform shape / FM depth / filter) evolves
+  const r = sessionKey.rootHz;
+  const padNotes = [r*2, r*3, r*4, r*5, r*6];
+  const chordName = sessionKey.keyName + ' drone';
+
+  // Cloud cover → filter (log scale — dramatic difference)
+  const filterHz = Math.round(Math.pow(10, lerp(Math.log10(11000), Math.log10(200), clouds/100)));
+  const filterQ  = lerp(0.5, 2.4, clouds/100);
+
+  // Brightness (harmonic gain envelope shape)
+  const brightness = isStorm ? 0.04 : isFog ? 0.12 : isSnow
+    ? clamp(1-clouds/100*0.55, 0.35, 0.78)
+    : clamp(1-Math.pow(clouds/100, 0.70), 0.04, 1.0);
+
+  // Wind: three noise bands
+  const windNorm     = clamp(wind/80, 0, 1);
+  const windBassGain = windNorm * 0.58;
+  const windMidGain  = clamp((windNorm-0.22)/0.78, 0, 1)*0.52;
+  const windHighGain = clamp((windNorm-0.50)/0.50, 0, 1)*0.40;
+  const windLFORate  = clamp(0.08+windNorm*6, 0.08, 6);
+  // Wind detune: high wind slightly randomizes oscillator pitch (organic shimmer, up to ±25 cents)
+  const windDetune   = windNorm * 60; // cents; L goes sharp, R goes flat → stereo beating
+
+  // Reverb
+  const revDecay = clamp(
+    isFog?9+humidity/100*14 : isSnow?5+humidity/100*6 : 0.5+(humidity/100)*22,
+    0.5, 28);
+  const revWet = clamp(
+    isFog?0.45 : isSnow?0.28 : 0.03+(humidity/100)*0.32,
+    0.03, 0.48);
+
+  // Pressure → FM depth modifier (low pressure = more instability)
+  const pressNorm     = clamp((pressure-960)/80, 0, 1);
+  const pressureFMBoost = lerp(0.4, 0, pressNorm); // adds to FM index at low pressure
+
+  // Sub pulse (storms / very low pressure)
+  const subPulseGain = isStorm ? 0.65
+    : pressNorm<0.35 ? lerp(0.50, 0.02, pressNorm/0.35) : 0;
+  const subPulseRate = clamp(isStorm?0.9:0.15+(1-pressNorm)*1.8, 0.15, 2.5);
+
+  // Rain
+  const rainOn         = !isSnow && precip>0.05;
+  const rainIntervalMs = rainOn ? clamp(1600/precip, 40, 3000) : null;
+  const rainNoiseLvl   = rainOn ? clamp(precip/10, 0, 0.55) : 0;
+
+  // Snow
+  const snowIntervalMs = isSnow ? clamp(3500/(precip+0.25), 250, 6000) : null;
+
+  // Sparkle rate (high-freq metallic plucks)
+  const sparkleRate = isStorm ? 0.06 : isFog ? 0 : isSnow ? 0.12
+    : rainOn ? 0.25
+    : clamp((1-clouds/100)*0.5, 0.05, 0.55);
+
+  // Gust/whoosh rate (bandpass noise swells)
+  const gustRate = isStorm ? 0.9
+    : windNorm>0.5 ? windNorm*0.6
+    : rainOn ? 0.2 : clamp(windNorm*0.4, 0.02, 0.5);
+
+  const pct    = (v,a,b) => Math.round(clamp((v-a)/(b-a)*100,0,100));
+  const logPct = (v,a,b) => Math.round(clamp((Math.log10(v)-Math.log10(a))/(Math.log10(b)-Math.log10(a))*100,0,100));
+
+  return {
+    padNotes, chordName,
+    filterHz, filterQ, brightness,
+    windBassGain, windMidGain, windHighGain, windLFORate, windDetune,
+    revDecay, revWet, pressNorm, pressureFMBoost,
+    subPulseGain, subPulseRate,
+    rainOn, rainIntervalMs, rainNoiseLvl,
+    isSnow, snowIntervalMs,
+    sparkleRate, gustRate,
+    vis:{
+      warmth:    pct(temp,-30,45)/100,
+      windiness: windNorm,
+      cloudness: clouds/100,
+      wetness:   humidity/100,
+      rainness:  rainOn?clamp(precip/10,0,1):0,
+      stormness: isStorm?1:0,
+      snowness:  isSnow?1:0,
+    },
+    bars:[
+      {label:'Brightness',  sub:'clouds →',   val:Math.round(brightness*100)+'%',     pct:Math.round(brightness*100)},
+      {label:'Filter',      sub:'clouds →',   val:filterHz<1000?filterHz+'Hz':(filterHz/1000).toFixed(1)+'kHz', pct:logPct(filterHz,200,11000)},
+      {label:'FM depth',    sub:'temp lag →', val:Math.round(pressureFMBoost*100)+'%', pct:Math.round(pressureFMBoost*100)},
+      {label:'Wind noise',  sub:'wind →',     val:Math.round(windNorm*100)+'%',       pct:Math.round(windNorm*100)},
+      {label:'Reverb',      sub:'humidity →', val:revDecay.toFixed(1)+'s',            pct:pct(revDecay,0.5,28)},
+      {label:rainOn?'Rain':isSnow?'Snow':'Precip', sub:'→',
+       val:rainOn?(1000/rainIntervalMs).toFixed(1)+'/s':isSnow&&snowIntervalMs?(1000/snowIntervalMs).toFixed(2)+'/s':'none',
+       pct:rainOn?clamp(precip/10,0,1)*100:isSnow?50:0},
+    ]
+  };
+}
+
+// ══════════════════════════════════════════════════════
+//  AUDIO ENGINE  — FM oscillators with lagged temperature waveforms
+// ══════════════════════════════════════════════════════
+let eng = null;
+let audioPlaying = false;
+
+async function buildEngine(p, sessionKey, lags) {
+  if (eng) { eng.dispose(); eng=null; }
+  await Tone.start();
+
+  // ── Master chain ──────────────────────────────────────
+  const masterFade    = new Tone.Gain(0);
+  const masterFilter  = new Tone.Filter({ frequency:p.filterHz, type:'lowpass', Q:p.filterQ });
+  const masterReverb  = new Tone.Reverb({ decay:clamp(p.revDecay,0.5,22), wet:p.revWet });
+  const masterLimiter = new Tone.Limiter(-3);
+  const analyser      = new Tone.Analyser('waveform', 512);
+  await masterReverb.ready;
+  masterFade.chain(masterFilter, masterReverb, masterLimiter, Tone.Destination);
+  masterLimiter.connect(analyser);
+
+
+  // ── Stereo FM oscillator pairs (L/R with different lag windows + different morph speed) ──
+  // L: current lag windows, converges faster.  R: 2h-offset windows, converges slower → natural lag.
+  const partials0 = computePartials(lags.temps0);
+  const partials1 = computePartials(lags.temps1);
+  const partials2 = computePartials(lags.temps2);
+  const partialsR0 = computePartials(lags.tempsR0 ?? lags.temps0);
+  const partialsR1 = computePartials(lags.tempsR1 ?? lags.temps1);
+  const partialsR2 = computePartials(lags.tempsR2 ?? lags.temps2);
+  const mi01 = computeModIndex(lags.temps0, lags.temps1) + p.pressureFMBoost;
+  const mi12 = computeModIndex(lags.temps1, lags.temps2) + p.pressureFMBoost*0.7;
+
+  const freqs0 = p.padNotes.slice(0,3);
+  const panL = new Tone.Panner(-0.78); panL.connect(masterFade);
+  const panR = new Tone.Panner( 0.78); panR.connect(masterFade);
+
+  function makeOscTrio(parts, panner) {
+    const [o0,o1,o2] = parts.map((ps,i) =>
+      new Tone.OmniOscillator({ type:'custom', partials:ps, frequency:freqs0[i] }));
+    const [g0,g1,g2] = [0.42,0.32,0.22].map(g => new Tone.Gain(g * p.brightness));
+    o0.connect(g0); g0.connect(panner);
+    o1.connect(g1); g1.connect(panner);
+    o2.connect(g2); g2.connect(panner);
+    const fm01 = new Tone.Gain(mi01 * freqs0[0]);
+    const fm12  = new Tone.Gain(mi12  * freqs0[1]);
+    o1.connect(fm01); fm01.connect(o0.frequency);
+    o2.connect(fm12);  fm12.connect(o1.frequency);
+    return { oscs:[o0,o1,o2], gains:[g0,g1,g2], fm01, fm12 };
+  }
+
+  const trioL = makeOscTrio([partials0,  partials1,  partials2 ], panL);
+  const trioR = makeOscTrio([partialsR0, partialsR1, partialsR2], panR);
+
+  // Wavetable morph: lerp curParts → tgtParts per 60ms tick
+  // Alpha is adaptive: computed each tick from tlSpeed so convergence is always ~99% per step
+  // R always uses a slower alpha (×0.6) to create natural stereo lag
+  let curPartsL = [partials0.slice(),  partials1.slice(),  partials2.slice()];
+  let tgtPartsL = [partials0.slice(),  partials1.slice(),  partials2.slice()];
+  let curPartsR = [partialsR0.slice(), partialsR1.slice(), partialsR2.slice()];
+  let tgtPartsR = [partialsR0.slice(), partialsR1.slice(), partialsR2.slice()];
+  let morphTimer = null;
+  // ticksPerStep = (stepDuration_s × 1000) / 60ms; alpha for 99% convergence in N ticks:
+  // alpha = 1 - 0.01^(1/N); clamped so it's never too slow (1×) or too snappy (>100×)
+  function morphAlpha() {
+    const N = clamp((60 / tlSpeed * 1000) / 60, 4, 1200); // ticks per step
+    return clamp(1 - Math.pow(0.01, 1/N), 0.008, 0.40);
+  }
+
+  function startMorph() { morphTimer = setInterval(morphTick, 60); }
+  function stopMorph()  { if (morphTimer) { clearInterval(morphTimer); morphTimer = null; } }
+
+  const padOscs = []; // removed — was causing constant-pitch tone overlay
+
+  // ── Wind: three noise bands ───────────────────────────
+  const windBassN  = new Tone.Noise('pink');
+  const windBassLP = new Tone.Filter({ type:'lowpass', frequency:160, Q:0.8 });
+  const windBassG  = new Tone.Gain(p.windBassGain);
+  windBassN.chain(windBassLP, windBassG, masterFade);
+
+  const windMidN   = new Tone.Noise('pink');
+  const windMidBP  = new Tone.Filter({ type:'bandpass', frequency:680, Q:1.4 });
+  const windMidLFO = new Tone.LFO({ frequency:p.windLFORate, min:280, max:1500 }).start();
+  windMidLFO.connect(windMidBP.frequency);
+  const windMidG   = new Tone.Gain(p.windMidGain);
+  windMidN.chain(windMidBP, windMidG, masterFade);
+
+  const windHighN  = new Tone.Noise('white');
+  const windHighHP = new Tone.Filter({ type:'highpass', frequency:3800 });
+  const windHighG  = new Tone.Gain(p.windHighGain);
+  windHighN.chain(windHighHP, windHighG, masterFade);
+
+  // ── Gust / whoosh (bandpass noise swell, panning) ─────
+  const gustNoise  = new Tone.Noise('pink');
+  const gustFilter = new Tone.Filter({ type:'bandpass', frequency:400, Q:0.5 });
+  const gustEnv    = new Tone.AmplitudeEnvelope({ attack:0.35, decay:0.7, sustain:0, release:0.5 });
+  const gustPan    = new Tone.Panner(0);
+  const gustRev    = new Tone.Reverb({ decay:1.6, wet:0.72 });
+  await gustRev.ready;
+  const gustOut    = new Tone.Gain(0.28);
+  gustNoise.chain(gustFilter, gustEnv, gustPan, gustRev, gustOut, masterFade);
+  let gustTimer = null;
+  function scheduleGust(rate) {
+    if (gustTimer) { clearTimeout(gustTimer); gustTimer=null; }
+    if (rate<=0||!audioPlaying) return;
+    const fire = () => {
+      if (!audioPlaying) return;
+      gustFilter.frequency.value = 150 + Math.random()*900;
+      gustFilter.Q.value = 0.3 + Math.random()*0.9;
+      gustPan.pan.rampTo((Math.random()*2-1), 0.3);
+      gustEnv.triggerAttackRelease(0.3 + Math.random()*0.8);
+      gustTimer = setTimeout(fire, (1/rate)*1000*(0.4+Math.random()*1.2));
+    };
+    gustTimer = setTimeout(fire, Math.random()*(1/rate)*1500);
+  }
+  function stopGust(){if(gustTimer){clearTimeout(gustTimer);gustTimer=null;}}
+
+  // sub pulse removed — was a constant-pitch sine overlay
+
+  // ── Rain ─────────────────────────────────────────────
+  const rainSynth    = new Tone.MetalSynth({
+    envelope:{attack:0.001,decay:0.055,release:0.03},
+    harmonicity:5.1, modulationIndex:16, resonance:3000, octaves:1.5
+  });
+  const rainDropGain = new Tone.Gain(0.085);
+  const rainRev      = new Tone.Reverb({ decay:1.4, wet:0.60 });
+  await rainRev.ready;
+  rainSynth.chain(rainDropGain, rainRev, masterFade);
+  const rainNoiseN   = new Tone.Noise('pink');
+  const rainNoiseBP  = new Tone.Filter({ type:'bandpass', frequency:1100, Q:0.9 });
+  const rainNoiseG   = new Tone.Gain(p.rainNoiseLvl);
+  rainNoiseN.chain(rainNoiseBP, rainNoiseG, masterFade);
+  let rainTimer = null;
+  let rainTargetMs = null; // target interval — morphed in morphTick for smooth rate transitions
+  let curRainMs = null;
+  function scheduleRain(ms) {
+    rainTargetMs = ms;
+    if (!curRainMs) curRainMs = ms; // snap to target on first call
+    if (rainTimer) return; // already running — morphTick will adjust rate
+    if (!ms || !audioPlaying) return;
+    const fire = () => {
+      if (!audioPlaying) { rainTimer=null; return; }
+      // Soft gate: only fire drop if rain noise has actually faded in
+      if (curAudioL && curAudioL.rainNoise > 0.01) {
+        rainSynth.frequency.value = 220 + Math.random()*900;
+        rainSynth.triggerAttackRelease('32n');
+      }
+      // Morph current interval toward target
+      if (curRainMs && rainTargetMs) curRainMs += (rainTargetMs - curRainMs) * 0.15;
+      rainTimer = setTimeout(fire, (curRainMs||ms) * (0.6 + Math.random()*0.8));
+    };
+    rainTimer = setTimeout(fire, Math.random() * (curRainMs||ms));
+  }
+  function stopRain() {
+    rainTargetMs = null; curRainMs = null;
+    if (rainTimer){clearTimeout(rainTimer);rainTimer=null;}
+  }
+
+  // ── Snow ─────────────────────────────────────────────
+  const snowSynth = new Tone.Synth({
+    oscillator:{type:'triangle'},
+    envelope:{attack:0.002,decay:0.5,sustain:0,release:0.8}
+  });
+  const snowGain = new Tone.Gain(0.038);
+  const snowRev  = new Tone.Reverb({decay:5, wet:0.78});
+  await snowRev.ready;
+  snowSynth.chain(snowGain, snowRev, masterFade);
+  let snowTimer = null;
+  const snowFreqPool = [sessionKey.rootHz*4, sessionKey.rootHz*6,
+                        sessionKey.rootHz*8, sessionKey.rootHz*4.5];
+  function scheduleSnow(ms) {
+    if (snowTimer){clearTimeout(snowTimer);snowTimer=null;}
+    if (!ms||!audioPlaying) return;
+    const fire=()=>{
+      if(!audioPlaying)return;
+      snowSynth.triggerAttackRelease(snowFreqPool[Math.floor(Math.random()*snowFreqPool.length)],'8n');
+      snowTimer=setTimeout(fire, ms+(Math.random()-.5)*ms*.7);
+    };
+    snowTimer=setTimeout(fire, Math.random()*ms);
+  }
+  function stopSnow(){if(snowTimer){clearTimeout(snowTimer);snowTimer=null;}}
+
+  // ── Sparkle (high metallic plucks) ────────────────────
+  const sparkleSynth = new Tone.MetalSynth({
+    envelope:{attack:0.001, decay:0.18, release:0.08},
+    harmonicity:9.2, modulationIndex:28, resonance:7000, octaves:0.4
+  });
+  const sparkleGain = new Tone.Gain(0.048);
+  const sparkleRev  = new Tone.Reverb({ decay:3.5, wet:0.92 });
+  await sparkleRev.ready;
+  sparkleSynth.chain(sparkleGain, sparkleRev, masterFade);
+  let sparkleTimer = null;
+  function scheduleSparkle(rate) {
+    if (sparkleTimer) { clearTimeout(sparkleTimer); sparkleTimer=null; }
+    if (rate<=0||!audioPlaying) return;
+    const fire = () => {
+      if (!audioPlaying) return;
+      sparkleSynth.frequency.value = 1500 + Math.random()*5000;
+      sparkleSynth.triggerAttackRelease('64n');
+      sparkleTimer = setTimeout(fire, (1/rate)*1000*(0.3+Math.random()*1.4));
+    };
+    sparkleTimer = setTimeout(fire, Math.random()*(1/rate)*2000);
+  }
+  function stopSparkle(){if(sparkleTimer){clearTimeout(sparkleTimer);sparkleTimer=null;}}
+
+
+
+  // ── Start / Stop ──────────────────────────────────────
+  function startAll() {
+    [...trioL.oscs, ...trioR.oscs].forEach(o=>o.start());
+    windBassN.start(); windMidN.start(); windHighN.start();
+    gustNoise.start(); rainNoiseN.start();
+    masterFade.gain.rampTo(0.72, 5);
+    startMorph();
+    scheduleSparkle(p.sparkleRate);
+    scheduleGust(p.gustRate);
+    if (p.rainOn)  scheduleRain(p.rainIntervalMs);
+    if (p.isSnow)  scheduleSnow(p.snowIntervalMs);
+  }
+
+  function stopAll(fadeTime=2.5) {
+    stopRain(); stopSnow(); stopSparkle(); stopGust(); stopMorph();
+    masterFade.gain.rampTo(0, fadeTime);
+    setTimeout(()=>{
+      try {
+        [...trioL.oscs, ...trioR.oscs].forEach(o=>o.stop());
+        windBassN.stop(); windMidN.stop(); windHighN.stop();
+        gustNoise.stop(); rainNoiseN.stop();
+      } catch(e){}
+    }, (fadeTime+0.1)*1000);
+  }
+
+  // ── Morph state ──────────────────────────────────────
+  // Shared (master filter, reverb) — single target, lerped in log-space for filter
+  let tgtShared = { filterHz: p.filterHz, revWet: p.revWet };
+  let curShared = { ...tgtShared };
+  // Per-channel audio: L (fast, AL) and R (slow, AR) — same targets, different convergence
+  const mkAudio = () => ({
+    fm01g: mi01*freqs0[0], fm12g: mi12*freqs0[1], brightness: p.brightness,
+    windBass: p.windBassGain, windMid: p.windMidGain, windHigh: p.windHighGain,
+    windLFO: p.windLFORate,
+    rainNoise: p.rainNoiseLvl, windDetune: p.windDetune ?? 0,
+  });
+  let tgtAudio = mkAudio();
+  let curAudioL = mkAudio(), curAudioR = mkAudio();
+
+  function morphTick() {
+    const AL = morphAlpha();
+    const AR = AL * 0.60; // R always lags behind L for stereo depth
+
+    // Log-lerp for filterHz (perceptually linear); linear for revWet
+    const logL = (c,t,a) => Math.exp(Math.log(Math.max(c,0.1)) + (Math.log(Math.max(t,0.1))-Math.log(Math.max(c,0.1)))*a);
+    const linL = (c,t,a) => Math.abs(t-c)>0.0001 ? c+(t-c)*a : t;
+    curShared.filterHz = logL(curShared.filterHz, tgtShared.filterHz, AL);
+    curShared.revWet   = linL(curShared.revWet,   tgtShared.revWet,   AL);
+    masterFilter.frequency.value = curShared.filterHz;
+    masterReverb.wet.value       = curShared.revWet;
+
+    // Lerp per-channel audio params
+    const lerpAudio = (cur, tgt, a) => {
+      for (const k in tgt) cur[k] = linL(cur[k], tgt[k], a);
+    };
+    lerpAudio(curAudioL, tgtAudio, AL);
+    lerpAudio(curAudioR, tgtAudio, AR);
+
+    // Apply L
+    const [g0L,g1L,g2L] = trioL.gains;
+    g0L.gain.value = 0.42*curAudioL.brightness;
+    g1L.gain.value = 0.32*curAudioL.brightness;
+    g2L.gain.value = 0.22*curAudioL.brightness;
+    trioL.fm01.gain.value = curAudioL.fm01g;
+    trioL.fm12.gain.value  = curAudioL.fm12g;
+    // Wind detune: L pushed sharp, R pushed flat — beats at L-R beat frequency
+    // Each oscillator within a channel gets a slightly different offset so beating
+    // is complex rather than uniform (0: full, 1: 70%, 2: 50% of wind amount)
+    const wL = curAudioL.windDetune;
+    const wR = curAudioR.windDetune;
+    // Within L: osc0 sharp, osc1 flat, osc2 sharp (alternating)
+    trioL.oscs.forEach((o,i) => { o.detune.value = pitchCentsRef + wL * [1.0, -0.7, 0.5][i]; });
+    // Apply R
+    const [g0R,g1R,g2R] = trioR.gains;
+    g0R.gain.value = 0.42*curAudioR.brightness;
+    g1R.gain.value = 0.32*curAudioR.brightness;
+    g2R.gain.value = 0.22*curAudioR.brightness;
+    trioR.fm01.gain.value = curAudioR.fm01g;
+    trioR.fm12.gain.value  = curAudioR.fm12g;
+    // Within R: mirrored — osc0 flat, osc1 sharp, osc2 flat
+    trioR.oscs.forEach((o,i) => { o.detune.value = pitchCentsRef + wR * [-1.0, 0.7, -0.5][i]; });
+    // Shared wind/sub
+    windBassG.gain.value        = curAudioL.windBass;
+    windMidG.gain.value         = curAudioL.windMid;
+    windHighG.gain.value        = curAudioL.windHigh;
+    windMidLFO.frequency.value  = curAudioL.windLFO;
+    // Rain noise — always morphed; gate MetalSynth drops by morphed level
+    rainNoiseG.gain.value = curAudioL.rainNoise;
+
+    // Waveform partials — L fast, R slow
+    let dirtyL = false, dirtyR = false;
+    for (let v=0;v<3;v++) {
+      for (let h=0;h<curPartsL[v].length;h++) {
+        const dL = tgtPartsL[v][h]-curPartsL[v][h];
+        if (Math.abs(dL)>0.0005){curPartsL[v][h]+=dL*AL;dirtyL=true;}else curPartsL[v][h]=tgtPartsL[v][h];
+        const dR = tgtPartsR[v][h]-curPartsR[v][h];
+        if (Math.abs(dR)>0.0005){curPartsR[v][h]+=dR*AR;dirtyR=true;}else curPartsR[v][h]=tgtPartsR[v][h];
+      }
+    }
+    if (dirtyL) try { trioL.oscs[0].partials=curPartsL[0]; trioL.oscs[1].partials=curPartsL[1]; trioL.oscs[2].partials=curPartsL[2]; } catch(e){}
+    if (dirtyR) try { trioR.oscs[0].partials=curPartsR[0]; trioR.oscs[1].partials=curPartsR[1]; trioR.oscs[2].partials=curPartsR[2]; } catch(e){}
+  }
+
+  // ── Update (called every timeline step) ──────────────
+  function updateParams(np, t, newLags) {
+    // Update waveform targets
+    if (newLags) {
+      // L targets from current lag windows
+      tgtPartsL[0] = computePartials(newLags.temps0);
+      tgtPartsL[1] = computePartials(newLags.temps1);
+      tgtPartsL[2] = computePartials(newLags.temps2);
+      // R targets from 2h-offset windows
+      tgtPartsR[0] = computePartials(newLags.tempsR0 ?? newLags.temps0);
+      tgtPartsR[1] = computePartials(newLags.tempsR1 ?? newLags.temps1);
+      tgtPartsR[2] = computePartials(newLags.tempsR2 ?? newLags.temps2);
+      const nmi01 = computeModIndex(newLags.temps0, newLags.temps1) + np.pressureFMBoost;
+      const nmi12 = computeModIndex(newLags.temps1, newLags.temps2) + np.pressureFMBoost*0.7;
+      tgtAudio.fm01g = nmi01 * np.padNotes[0];
+      tgtAudio.fm12g = nmi12 * np.padNotes[1];
+    }
+    // All audio targets — morph loop glides L and R toward them at different rates
+    tgtShared.filterHz  = np.filterHz;
+    tgtShared.revWet    = np.revWet;
+    tgtAudio.brightness = np.brightness;
+    tgtAudio.windBass   = np.windBassGain;
+    tgtAudio.windMid    = np.windMidGain;
+    tgtAudio.windHigh   = np.windHighGain;
+    tgtAudio.windLFO    = np.windLFORate;
+    tgtAudio.windDetune = np.windDetune ?? 0;
+    tgtAudio.rainNoise  = np.rainNoiseLvl;
+
+    // Event-based sounds (scheduled, not morphed)
+    if (np.rainOn) scheduleRain(np.rainIntervalMs); else stopRain();
+    if (np.isSnow) scheduleSnow(np.snowIntervalMs); else stopSnow();
+    scheduleSparkle(np.sparkleRate);
+    scheduleGust(np.gustRate);
+  }
+
+  function dispose() {
+    stopRain(); stopSnow(); stopSparkle(); stopGust(); stopMorph();
+    const all = [
+      masterFade, masterFilter, masterReverb, masterLimiter,
+      panL, panR,
+      ...trioL.oscs, ...trioL.gains, trioL.fm01, trioL.fm12,
+      ...trioR.oscs, ...trioR.gains, trioR.fm01, trioR.fm12,
+      windBassN, windBassLP, windBassG,
+      windMidN, windMidBP, windMidLFO, windMidG,
+      windHighN, windHighHP, windHighG,
+      gustNoise, gustFilter, gustEnv, gustPan, gustRev, gustOut,
+      rainSynth, rainDropGain, rainRev, rainNoiseN, rainNoiseBP, rainNoiseG,
+      snowSynth, snowGain, snowRev,
+      sparkleSynth, sparkleGain, sparkleRev,
+    ];
+    all.forEach(n=>{try{n.dispose();}catch(e){}});
+  }
+
+  let pitchCentsRef = 0;
+  function setPitchCents(cents) {
+    pitchCentsRef = cents;
+    // FM trio detune applied in morphTick; pad/subPulse removed
+    // FM trio detune is applied in morphTick so wind offset is always included
+  }
+
+  const getPartials = () => ({ L: curPartsL, R: curPartsR });
+
+  return { startAll, stopAll, updateParams, setPitchCents, getPartials, dispose, analyser };
+}
+
+// ══════════════════════════════════════════════════════
+//  WAVEFORM
+// ══════════════════════════════════════════════════════
+let waveRaf = null;
+function startWave() {
+  const canvas = document.getElementById('waveCanvas');
+  const ctx = canvas.getContext('2d');
+  let phase = 0;
+  function draw() {
+    canvas.width=canvas.offsetWidth; canvas.height=canvas.offsetHeight;
+    const W=canvas.width, H=canvas.height;
+    ctx.clearRect(0,0,W,H);
+    if (eng && audioPlaying) {
+      const data=eng.analyser.getValue();
+      const grad=ctx.createLinearGradient(0,0,W,0);
+      grad.addColorStop(0,'rgba(123,159,255,0)');
+      grad.addColorStop(.3,'rgba(123,159,255,.8)');
+      grad.addColorStop(.7,'rgba(192,132,252,.8)');
+      grad.addColorStop(1,'rgba(192,132,252,0)');
+      ctx.beginPath(); ctx.strokeStyle=grad; ctx.lineWidth=1.5;
+      data.forEach((v,i)=>{const x=(i/data.length)*W,y=H/2+v*H*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+      ctx.stroke();
+      ctx.beginPath(); ctx.strokeStyle='rgba(123,159,255,.1)'; ctx.lineWidth=5;
+      data.forEach((v,i)=>{const x=(i/data.length)*W,y=H/2+v*H*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
+      ctx.stroke();
+    } else {
+      phase+=.012;
+      ctx.beginPath(); ctx.strokeStyle='rgba(123,159,255,.16)'; ctx.lineWidth=1;
+      for(let i=0;i<=W;i++){const y=H/2+Math.sin(i/W*Math.PI*4+phase)*2.2;i?ctx.lineTo(i,y):ctx.moveTo(i,y)}
+      ctx.stroke();
+    }
+    waveRaf=requestAnimationFrame(draw);
+  }
+  if(waveRaf)cancelAnimationFrame(waveRaf);
+  draw();
+}
+
+// ── Oscillator waveform pane ─────────────────────────
+const OSC_IDS = ['oscL0','oscL1','oscL2','oscR0','oscR1','oscR2'];
+const oscCanvases = OSC_IDS.map(id => document.getElementById(id));
+let oscRaf = null;
+
+function synthWave(parts, N=128) {
+  const wave = new Float32Array(N);
+  for (let i=0; i<N; i++) {
+    let y = 0;
+    for (let k=0; k<parts.length; k++) y += parts[k] * Math.sin((k+1)*2*Math.PI*i/N);
+    wave[i] = y;
+  }
+  return wave;
+}
+
+function drawOscPane() {
+  if (!eng || !audioPlaying) {
+    oscCanvases.forEach(c => { if(c){const ctx=c.getContext('2d');c.width=c.offsetWidth||60;c.height=c.offsetHeight||44;ctx.clearRect(0,0,c.width,c.height);} });
+    oscRaf = requestAnimationFrame(drawOscPane);
+    return;
+  }
+  const {L, R} = eng.getPartials();
+  const allParts = [...L, ...R];
+  allParts.forEach((parts, vi) => {
+    const c = oscCanvases[vi];
+    if (!c) return;
+    c.width = c.offsetWidth || 60; c.height = c.offsetHeight || 44;
+    const W = c.width, H = c.height;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, W, H);
+    const wave = synthWave(parts);
+    const mx = Math.max(...wave.map(Math.abs), 0.01);
+    const isR = vi >= 3;
+    const col = isR ? 'rgba(192,132,252,' : 'rgba(123,159,255,';
+    ctx.beginPath();
+    ctx.strokeStyle = col + '0.75)';
+    ctx.lineWidth = 1.3;
+    wave.forEach((v, i) => {
+      const x = (i / (wave.length-1)) * W;
+      const y = H/2 - (v/mx) * H * 0.42;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    });
+    ctx.stroke();
+  });
+  oscRaf = requestAnimationFrame(drawOscPane);
+}
+function startOscPane() { if(oscRaf)cancelAnimationFrame(oscRaf); drawOscPane(); }
+
+// ══════════════════════════════════════════════════════
+//  GENERATIVE GRAPHICS
+// ══════════════════════════════════════════════════════
+const genCanvas = document.getElementById('genCanvas');
+const gc = genCanvas.getContext('2d');
+let visParams    = {warmth:.5,windiness:.1,cloudness:.3,wetness:.5,rainness:0,stormness:0,snowness:0};
+let curVisParams = {...visParams};
+let particles = [];
+let genRaf = null, genTime = 0;
+
+function resizeGen(){genCanvas.width=window.innerWidth;genCanvas.height=window.innerHeight;}
+window.addEventListener('resize',resizeGen); resizeGen();
+
+class Particle {
+  constructor(born=false){this.reset(born);}
+  reset(born=false){
+    const W=genCanvas.width,H=genCanvas.height,v=curVisParams;
+    if(v.rainness>0.3){
+      this.type='rain';this.size=0.8+Math.random()*.8;
+      this.vx=-1+(Math.random()-.5)*.5+v.windiness*-3;this.vy=4+Math.random()*6+v.rainness*8;
+      this.x=Math.random()*W;this.y=born?Math.random()*H:-10;
+    } else if(v.snowness>0.5){
+      this.type='snow';this.size=1.5+Math.random()*2.5;
+      this.vx=(Math.random()-.5)*.8+v.windiness*1.5;this.vy=0.4+Math.random()*1.2;
+      this.x=Math.random()*W;this.y=born?Math.random()*H:-10;this.wobble=Math.random()*Math.PI*2;
+    } else {
+      this.type='orb';this.size=80+Math.random()*220;
+      this.vx=(Math.random()-.5)*.08*(1+v.windiness*2);this.vy=(Math.random()-.5)*.04;
+      this.x=born?Math.random()*W:Math.random()<.5?-this.size:W+this.size;this.y=Math.random()*H;
+    }
+  }
+  update(){
+    const W=genCanvas.width,H=genCanvas.height;
+    if(this.type==='snow'){this.wobble=(this.wobble||0)+.04;this.x+=this.vx+Math.sin(this.wobble)*.5;}
+    else this.x+=this.vx;
+    this.y+=this.vy;
+    if(this.type==='orb'){
+      if(this.x<-this.size)this.x=W+this.size;if(this.x>W+this.size)this.x=-this.size;
+      if(this.y<-this.size)this.y=H+this.size;if(this.y>H+this.size)this.y=-this.size;
+    } else if(this.y>H+10||this.x<-20||this.x>W+20)this.reset(false);
+  }
+  draw(ctx){
+    const v=curVisParams;
+    if(this.type==='rain'){
+      ctx.strokeStyle=`rgba(130,180,255,${.22+v.rainness*.28})`;ctx.lineWidth=this.size;
+      ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(this.x+this.vx*1.5,this.y-7-v.rainness*5);ctx.stroke();
+    } else if(this.type==='snow'){
+      ctx.fillStyle=`rgba(220,235,255,${.32+v.snowness*.22})`;
+      ctx.beginPath();ctx.arc(this.x,this.y,this.size,0,Math.PI*2);ctx.fill();
+    } else {
+      const r=Math.round(lerp(40,180,v.warmth)),g=Math.round(lerp(60,80,v.cloudness)),b=Math.round(lerp(185,55,v.warmth));
+      const a=lerp(.022,.055,1-v.cloudness)*(v.stormness?.35:1);
+      const gr=ctx.createRadialGradient(this.x,this.y,0,this.x,this.y,this.size);
+      gr.addColorStop(0,`rgba(${r},${g},${b},${a})`);gr.addColorStop(1,`rgba(${r},${g},${b},0)`);
+      ctx.fillStyle=gr;ctx.beginPath();ctx.arc(this.x,this.y,this.size,0,Math.PI*2);ctx.fill();
+    }
+  }
+}
+
+function buildParticles(){
+  const v=curVisParams;
+  const n=v.rainness>0.3?Math.round(60+v.rainness*120):v.snowness>0.5?Math.round(40+v.snowness*80):26;
+  particles=Array.from({length:n},()=>new Particle(true));
+}
+
+function drawGen(){
+  genTime+=.006;
+  const W=genCanvas.width,H=genCanvas.height,v=curVisParams;
+  for(const k in curVisParams)curVisParams[k]=lerp(curVisParams[k],visParams[k],.005);
+  gc.fillStyle=`rgba(7,7,15,${.07+v.cloudness*.07})`;gc.fillRect(0,0,W,H);
+  if(v.windiness>.1){
+    const sc=Math.round(v.windiness*5);
+    for(let i=0;i<sc;i++){
+      const sy=H*.2+Math.sin(genTime*.3+i*1.4)*H*.5,sw=200+v.windiness*400+Math.sin(genTime+i)*100;
+      const sx=((W/2+Math.cos(genTime*.2+i)*W*.35-sw/2+genTime*(28+i*14))%(W+sw))-sw*.3;
+      const sg=gc.createLinearGradient(sx,sy,sx+sw,sy);
+      sg.addColorStop(0,'rgba(180,200,255,0)');sg.addColorStop(.5,`rgba(180,200,255,${v.windiness*.022})`);sg.addColorStop(1,'rgba(180,200,255,0)');
+      gc.strokeStyle=sg;gc.lineWidth=.8;gc.beginPath();gc.moveTo(sx,sy);gc.lineTo(sx+sw,sy+v.windiness*3);gc.stroke();
+    }
+  }
+  if(v.stormness>.5&&Math.random()<.003){
+    gc.fillStyle=`rgba(200,210,255,${.04+Math.random()*.06})`;gc.fillRect(0,0,W,H);
+    const bx=W*.2+Math.random()*W*.6;
+    gc.strokeStyle='rgba(200,220,255,.65)';gc.lineWidth=1.5;gc.beginPath();gc.moveTo(bx,0);
+    let cy=0,cx=bx;
+    while(cy<H*.6){cy+=30+Math.random()*40;cx+=(Math.random()-.5)*60;gc.lineTo(cx,cy);}
+    gc.stroke();
+  }
+  particles.forEach(p=>{p.update();p.draw(gc);});
+  if(eng&&audioPlaying){
+    const data=eng.analyser.getValue();
+    const rms=Math.sqrt(data.reduce((s,x)=>s+x*x,0)/data.length);
+    const cx=W/2,cy=H/2,br=Math.min(W,H)*.13;
+    gc.beginPath();
+    data.forEach((x,i)=>{const a=(i/data.length)*Math.PI*2-Math.PI/2,r=br+x*br*.55,px=cx+Math.cos(a)*r,py=cy+Math.sin(a)*r;i?gc.lineTo(px,py):gc.moveTo(px,py);});
+    gc.closePath();
+    gc.strokeStyle=`rgba(123,159,255,${.05+rms*.18})`;gc.lineWidth=1;gc.stroke();
+    gc.strokeStyle=`rgba(192,132,252,${.025+rms*.08})`;gc.lineWidth=4;gc.stroke();
+  }
+  genRaf=requestAnimationFrame(drawGen);
+}
+function startGen(){if(genRaf)cancelAnimationFrame(genRaf);buildParticles();drawGen();}
+
+// ══════════════════════════════════════════════════════
+//  TIMELINE STATE
+// ══════════════════════════════════════════════════════
+let timeline    = [];
+let tlIdx       = 0;
+let tlPlaying   = false;
+let tlTimer     = null;
+let tlSpeed     = 4;
+
+let selLoc      = null;
+let selLocName  = '';
+let sessionKey  = null;
+
+const stepDuration = () => 60/tlSpeed; // real seconds per data hour
+
+function computeLagWindows(idx) {
+  return {
+    temps0:  getTemperatureWindow(timeline, idx, 0),   // L: now, 1 day ago, 2 days ago
+    temps1:  getTemperatureWindow(timeline, idx, 24),
+    temps2:  getTemperatureWindow(timeline, idx, 48),
+    tempsR0: getTemperatureWindow(timeline, idx, 12),  // R: 12h offset from L
+    tempsR1: getTemperatureWindow(timeline, idx, 36),
+    tempsR2: getTemperatureWindow(timeline, idx, 60),
+  };
+}
+
+function tlGoto(idx, transition) {
+  tlIdx = clamp(idx, 0, timeline.length-1);
+  const entry = timeline[tlIdx];
+  const t = transition ?? Math.min(stepDuration()*.85, 5);
+  if (eng && audioPlaying) {
+    const lags = computeLagWindows(tlIdx);
+    eng.updateParams(entry.params, t, lags);
+  }
+  renderTimelineUI();
+  renderWeather(entry.w, {name:selLocName});
+  renderMappings(entry.params);
+  updateBadge(entry);
+  visParams = {...entry.params.vis};
+}
+
+function tlStep() {
+  if (tlIdx >= timeline.length-1) { tlPause(); statusEl.textContent='End of period'; return; }
+  tlGoto(tlIdx+1, stepDuration()*.85);
+}
+function tlPlay() {
+  if (!timeline.length) return;
+  tlPlaying=true; playBtn.textContent='◼  Stop'; scheduleTlStep();
+}
+function tlPause() {
+  tlPlaying=false;
+  if(tlTimer){clearTimeout(tlTimer);tlTimer=null;}
+  playBtn.textContent='▶  Play';
+}
+function scheduleTlStep() {
+  if (!tlPlaying) return;
+  tlTimer=setTimeout(()=>{tlStep();scheduleTlStep();}, stepDuration()*1000);
+}
+
+// ══════════════════════════════════════════════════════
+//  UI
+// ══════════════════════════════════════════════════════
+function renderWeather(w, loc) {
+  const [desc,icon]=wxDesc(w.weather_code);
+  const dirs=['N','NE','E','SE','S','SW','W','NW'];
+  const dir=dirs[Math.round((w.wind_direction_10m||0)/45)%8];
+  const dateLabel=w.time?new Date(w.time+'Z').toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+' UTC':'';
+  document.getElementById('wPanel').innerHTML=`
+    <div class="ptitle">Conditions</div>
+    <div class="w-loc">${loc.name}</div>
+    ${dateLabel?`<div class="w-date">${dateLabel}</div>`:''}
+    <div class="w-hero"><div class="w-icon">${icon}</div>
+      <div><div class="w-temp">${Math.round(w.temperature_2m)}°C</div><div class="w-desc">${desc}</div></div>
+    </div>
+    <div class="w-grid">
+      <div class="w-stat"><div class="sl">Wind</div><div class="sv">${Math.round(w.wind_speed_10m)} km/h ${dir}</div></div>
+      <div class="w-stat"><div class="sl">Cloud cover</div><div class="sv">${Math.round(w.cloud_cover)}%</div></div>
+      <div class="w-stat"><div class="sl">Humidity</div><div class="sv">${Math.round(w.relative_humidity_2m)}%</div></div>
+      <div class="w-stat"><div class="sl">Pressure</div><div class="sv">${Math.round(w.surface_pressure)} hPa</div></div>
+      <div class="w-stat"><div class="sl">Precipitation</div><div class="sv">${(w.precipitation||0).toFixed(1)} mm</div></div>
+    </div>`;
+}
+
+function renderMappings(p) {
+  const keyBadge = sessionKey ? `<span class="key-badge">Drone · ${sessionKey.keyName}</span>` : '';
+  document.getElementById('mPanel').innerHTML=`
+    <div class="ptitle">Sound</div>
+    <div style="margin-bottom:11px">${keyBadge}</div>
+    ${p.bars.map(b=>`
+      <div class="map-row">
+        <div class="map-hdr"><span class="map-lbl">${b.label} <span style="opacity:.5;font-size:.68rem">${b.sub}</span></span><span class="map-val">${b.val}</span></div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${b.pct}%"></div></div>
+      </div>`).join('')}`;
+}
+
+function renderTimelineUI() {
+  if (!timeline.length) return;
+  const pct=(tlIdx/(timeline.length-1))*100;
+  document.getElementById('tlFill').style.width=pct+'%';
+  document.getElementById('tlHandle').style.left=pct+'%';
+  const t=timeline[tlIdx];
+  if (t) {
+    const label=t.time?new Date(t.time+'Z').toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+' UTC':'';
+    document.getElementById('tlCurrent').textContent=label;
+  }
+  const multi=timeline.length>25;
+  const fmt=t=>{if(!t)return'';const d=new Date(t+'Z');return multi?d.toLocaleDateString(undefined,{month:'short',day:'numeric',timeZone:'UTC'}):t.slice(11,16);};
+  if(timeline[0])document.getElementById('tlStart').textContent=fmt(timeline[0].time);
+  if(timeline[timeline.length-1])document.getElementById('tlEnd').textContent=fmt(timeline[timeline.length-1].time);
+}
+
+function updateBadge(entry) {
+  const [desc,icon]=wxDesc(entry.w.weather_code);
+  const label=entry.time?new Date(entry.time+'Z').toLocaleString(undefined,{weekday:'short',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+' UTC':'';
+  document.getElementById('nbIcon').textContent=icon;
+  document.getElementById('nbPlace').textContent=selLocName+(sessionKey?' · '+sessionKey.keyName:'');
+  document.getElementById('nbTime').textContent=label;
+  document.getElementById('nbCond').textContent=`${desc} · ${Math.round(entry.w.temperature_2m)}°C`;
+  document.getElementById('nowBadge').classList.remove('hidden');
+}
+
+function show(v) {
+  document.getElementById('idleView').classList.toggle('hidden',v!=='idle');
+  document.getElementById('loadingView').classList.toggle('hidden',v!=='loading');
+  document.getElementById('mainView').classList.toggle('hidden',v!=='main');
+}
+
+// ── Timeline scrubber ──────────────────────────────────
+const tlTrack = document.getElementById('tlTrack');
+function seekFromEvent(e) {
+  if(!timeline.length)return;
+  const rect=tlTrack.getBoundingClientRect();
+  const x=(e.touches?e.touches[0].clientX:e.clientX)-rect.left;
+  tlGoto(Math.round(clamp(x/rect.width,0,1)*(timeline.length-1)), 1.2);
+}
+tlTrack.addEventListener('click', seekFromEvent);
+tlTrack.addEventListener('mousedown', e=>{
+  const mv=ev=>seekFromEvent(ev);
+  const up=()=>{window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);};
+  window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
+});
+
+// ══════════════════════════════════════════════════════
+//  LOCATION SEARCH
+// ══════════════════════════════════════════════════════
+const locInput    = document.getElementById('locInput');
+const dateInput   = document.getElementById('dateInput');
+const durationSel = document.getElementById('durationSel');
+const loadBtn     = document.getElementById('loadBtn');
+const sugg        = document.getElementById('sugg');
+const playBtn     = document.getElementById('playBtn');
+const stepBtn     = document.getElementById('stepBtn');
+const statusEl    = document.getElementById('statusEl');
+
+const todayStr = new Date().toISOString().slice(0,10);
+
+function defaultStartDate(days) {
+  const d = new Date(); d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0,10);
+}
+dateInput.value = defaultStartDate(30); // matches default "1 month"
+
+durationSel.addEventListener('change', () => {
+  dateInput.value = defaultStartDate(parseInt(durationSel.value));
+});
+
+let geoTimer = null;
+locInput.addEventListener('input',()=>{
+  clearTimeout(geoTimer); selLoc=null;
+  const q=locInput.value.trim(); if(q.length<2){closeSugg();return;}
+  geoTimer=setTimeout(async()=>showSugg(await geocode(q)),280);
+});
+locInput.addEventListener('blur',()=>setTimeout(closeSugg,180));
+
+function showSugg(res) {
+  if(!res.length){closeSugg();return;}
+  sugg.innerHTML=res.map((r,i)=>`<div class="sug-item" data-i="${i}">${r.name}<span class="sug-sub">${[r.admin1,r.country].filter(Boolean).join(', ')}</span></div>`).join('');
+  sugg.classList.add('open');
+  sugg.querySelectorAll('.sug-item').forEach(el=>el.addEventListener('mousedown',()=>{
+    const r=res[+el.dataset.i];
+    selLoc={lat:r.latitude,lon:r.longitude};
+    selLocName=[r.name,r.country].filter(Boolean).join(', ');
+    locInput.value=selLocName; closeSugg();
+  }));
+}
+function closeSugg(){sugg.classList.remove('open');sugg.innerHTML='';}
+
+document.querySelectorAll('.preset').forEach(btn=>btn.addEventListener('click',async()=>{
+  const city=btn.dataset.city; locInput.value=city;
+  const res=await geocode(city);
+  if(res[0]){
+    selLoc={lat:res[0].latitude,lon:res[0].longitude};
+    selLocName=[res[0].name,res[0].country].filter(Boolean).join(', ');
+    locInput.value=selLocName;
+    doLoad();
+  }
+}));
+loadBtn.addEventListener('click',doLoad);
+locInput.addEventListener('keydown',e=>{if(e.key==='Enter')doLoad();});
+
+async function doLoad() {
+  if (!selLoc) {
+    const q=locInput.value.trim(); if(!q)return;
+    const res=await geocode(q); if(!res[0]){alert('Location not found');return;}
+    selLoc={lat:res[0].latitude,lon:res[0].longitude};
+    selLocName=[res[0].name,res[0].country].filter(Boolean).join(', ');
+    locInput.value=selLocName;
+  }
+  show('loading'); loadBtn.disabled=true;
+  if(tlPlaying)tlPause();
+  if(eng&&audioPlaying){eng.stopAll(1);audioPlaying=false;playBtn.textContent='▶  Play';}
+  try {
+    const days=parseInt(durationSel.value);
+    const endDate=addDays(dateInput.value, days-1);
+    const rawData=await fetchHourly(selLoc.lat, selLoc.lon, dateInput.value, endDate);
+
+    // Compute the session key (fixed for the whole load)
+    sessionKey=pickSessionKey(rawData);
+
+    // Build timeline with session-key-aware params
+    timeline=rawData.map(w=>({time:w.time, w, params:weatherToMusic(w, sessionKey)}));
+    tlIdx=0;
+
+    renderWeather(timeline[0].w, {name:selLocName});
+    renderMappings(timeline[0].params);
+    renderTimelineUI();
+    updateBadge(timeline[0]);
+    visParams={...timeline[0].params.vis};
+    buildParticles();
+    show('main');
+    statusEl.textContent=`${timeline.length}h · Key: ${sessionKey.keyName} · press Play`;
+  } catch(err) {
+    console.error(err); alert('Failed: '+err.message); show('idle');
+  } finally { loadBtn.disabled=false; }
+}
+
+// ══════════════════════════════════════════════════════
+//  PLAY / STOP
+// ══════════════════════════════════════════════════════
+playBtn.addEventListener('click', async()=>{
+  if (!timeline.length) return;
+  if (tlPlaying||audioPlaying) {
+    tlPause();
+    if(eng&&audioPlaying){eng.stopAll(2.2);audioPlaying=false;}
+    playBtn.textContent='▶  Play'; statusEl.textContent='Stopped';
+    setTimeout(()=>{if(!audioPlaying&&!tlPlaying&&eng){eng.dispose();eng=null;}},3000);
+  } else {
+    playBtn.disabled=true;
+    statusEl.textContent='Initializing audio…';
+    try {
+      const p0=timeline[tlIdx].params;
+      const lags=computeLagWindows(tlIdx);
+      eng=await buildEngine(p0, sessionKey, lags);
+      eng.startAll();
+      const pitchSt = parseInt(pitchSliderEl.value);
+      if (pitchSt !== 0) eng.setPitchCents(pitchSt * 100);
+      audioPlaying=true;
+      tlPlay();
+      const totalMins=Math.round(timeline.length/tlSpeed);
+      statusEl.textContent=`Playing · ${sessionKey.keyName} · ${tlSpeed}× · ~${totalMins} min`;
+    } catch(err) {
+      console.error(err); statusEl.textContent='Audio error: '+err.message;
+    } finally { playBtn.disabled=false; }
+  }
+});
+
+stepBtn.addEventListener('click',()=>{if(timeline.length)tlStep();});
+
+// ── Speed buttons ──────────────────────────────────────
+document.querySelectorAll('.speed-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    document.querySelectorAll('.speed-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    tlSpeed=parseInt(btn.dataset.speed);
+    if(tlPlaying){if(tlTimer){clearTimeout(tlTimer);tlTimer=null;}scheduleTlStep();}
+    if(audioPlaying){
+      const remaining=Math.round((timeline.length-tlIdx)/tlSpeed);
+      statusEl.textContent=`Playing · ${sessionKey?.keyName} · ${tlSpeed}× · ~${remaining} min`;
+    }
+  });
+});
+
+// ── Pitch slider ─────────────────────────────────────
+const pitchSliderEl = document.getElementById('pitchSlider');
+const pitchValEl    = document.getElementById('pitchVal');
+pitchSliderEl.addEventListener('input', () => {
+  const st = parseInt(pitchSliderEl.value);
+  pitchValEl.textContent = (st > 0 ? '+' : '') + st;
+  if (eng) eng.setPitchCents(st * 100);
+});
+
+// ══════════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════════
+show('idle');
+startGen();
+startWave();
+startOscPane();
+</script>
+</body>
+</html>
