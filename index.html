@@ -15,6 +15,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WeatherPlayer</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☁️</text></svg>">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -52,7 +53,6 @@ select option{background:#0e0e1e;color:var(--text)}
 .sug-sub{color:var(--dim);font-size:.75rem;margin-left:5px}
 button{background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 18px;font-size:.86rem;cursor:pointer;transition:opacity .18s,transform .1s;white-space:nowrap}
 button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{opacity:.35;cursor:default}
-/* now badge */
 #nowBadge{background:rgba(123,159,255,.08);border:1px solid rgba(123,159,255,.2);border-radius:12px;padding:10px 16px;margin-bottom:13px;display:flex;align-items:center;gap:12px}
 #nowBadge.hidden{display:none}
 .nb-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s ease-in-out infinite;flex-shrink:0}
@@ -62,12 +62,10 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 .nb-place{font-size:.9rem;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nb-time{font-size:.75rem;color:var(--dim);margin-top:2px}
 .nb-cond{font-size:.82rem;color:var(--accent);margin-top:2px}
-/* grid */
 .main-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px}
 @media(max-width:680px){.main-grid{grid-template-columns:1fr}}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:17px}
 .ptitle{font-size:.68rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:13px}
-/* weather */
 .w-loc{font-size:.95rem;font-weight:400;margin-bottom:2px}
 .w-date{font-size:.76rem;color:var(--dim);margin-bottom:11px}
 .w-hero{display:flex;align-items:center;gap:13px;margin-bottom:14px}
@@ -78,7 +76,6 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 .w-stat{background:rgba(255,255,255,.025);border-radius:8px;padding:8px 10px}
 .sl{font-size:.67rem;color:var(--dim);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px}
 .sv{font-size:.95rem;font-weight:300}
-/* mappings */
 .key-badge{display:inline-block;background:rgba(123,159,255,.1);border:1px solid rgba(123,159,255,.28);color:var(--accent);font-size:.7rem;padding:2px 9px;border-radius:20px;margin-right:5px}
 .chord-badge{display:inline-block;background:rgba(192,132,252,.1);border:1px solid rgba(192,132,252,.28);color:var(--accent2);font-size:.7rem;padding:2px 9px;border-radius:20px;margin-bottom:12px}
 .map-row{margin-bottom:10px}
@@ -87,11 +84,10 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 .map-val{color:var(--accent);font-family:monospace;font-size:.73rem}
 .bar-bg{height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
 .bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width 1.8s ease}
-/* right panel */
 .right-col{position:relative}
 .right-stack{position:absolute;inset:0;overflow:hidden;display:flex;flex-direction:column;gap:13px}
 .right-stack>.panel{flex:1;display:flex;flex-direction:column;min-height:0}
-#waveCanvas{width:100%;flex:1;min-height:0;display:block;border-radius:8px;background:rgba(255,255,255,.04);margin-bottom:12px}
+#waveCanvas{width:100%;flex:1;min-height:0;display:block;border-radius:8px;background:rgba(255,255,255,.04);margin-bottom:12px;image-rendering:pixelated}
 .tl-wrap{margin-bottom:12px}
 .tl-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:2px;cursor:pointer;margin-bottom:7px}
 .tl-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width .4s linear;pointer-events:none}
@@ -117,7 +113,6 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 #stepBtn{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:11px;padding:12px 14px;font-size:.9rem}
 #stepBtn:hover{border-color:var(--accent)}
 .status{font-size:.74rem;color:var(--dim);text-align:center;margin-top:8px;min-height:1.1em}
-/* idle / loading */
 .idle{text-align:center;padding:60px 20px}
 .idle .globe{font-size:3rem;margin-bottom:14px}
 .idle p{color:var(--dim);font-size:.88rem}
@@ -872,70 +867,64 @@ async function buildEngine(p, sessionKey, lags) {
 // ══════════════════════════════════════════════════════
 //  WAVEFORM
 // ══════════════════════════════════════════════════════
-// Waterfall colour: page bg → dark navy → accent blue → accent purple → white
-function wfColor(db) {
-  const t = Math.max(0, Math.min(1, (db + 90) / 75)); // -90 dB=0, -15 dB=1
-  let r,g,b;
-  if (t < 0.35) { const s=t/0.35;
-    r=Math.round(7+s*10); g=Math.round(7+s*10); b=Math.round(15+s*60); }          // #07070f → dark navy
-  else if(t<0.60){ const s=(t-0.35)/0.25;
-    r=Math.round(17+s*106); g=Math.round(17+s*142); b=Math.round(75+s*180); }      // → accent blue #7b9fff
-  else if(t<0.80){ const s=(t-0.60)/0.20;
-    r=Math.round(123+s*69); g=Math.round(159-s*27); b=Math.round(255-s*3); }       // → accent purple #c084fc
-  else            { const s=(t-0.80)/0.20;
-    r=Math.round(192+s*63); g=Math.round(132+s*123); b=Math.round(252+s*3); }      // → white
-  return [r,g,b];
-}
-
 let waveRaf = null;
 function startWave() {
   const canvas = document.getElementById('waveCanvas');
   const ctx = canvas.getContext('2d');
   let phase = 0;
-  let wfBuf = null, wfCtx = null;
+  let smoothPeak = 0.001;
 
   function draw() {
     const W = canvas.offsetWidth || 300;
     const H = canvas.offsetHeight || 200;
+    canvas.width = W; canvas.height = H;
+    ctx.clearRect(0, 0, W, H);
 
-    if (eng && audioPlaying && eng.fftAnalyser) {
-      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
-      // Recreate offscreen buffer on first run or resize
-      if (!wfBuf || wfBuf.width !== W || wfBuf.height !== H) {
-        wfBuf = document.createElement('canvas');
-        wfBuf.width = W; wfBuf.height = H;
-        wfCtx = wfBuf.getContext('2d');
+    if (eng && audioPlaying && eng.analyserL && eng.analyserR) {
+      eng.analyserL.getFloatTimeDomainData(eng.xyBufL);
+      eng.analyserR.getFloatTimeDomainData(eng.xyBufR);
+      const L = eng.xyBufL, R = eng.xyBufR, N = L.length;
+
+      // Smooth peak normalization
+      let framePeak = 0.001;
+      for (let i = 0; i < N; i++) { const a = Math.max(Math.abs(L[i]), Math.abs(R[i])); if (a > framePeak) framePeak = a; }
+      smoothPeak = framePeak > smoothPeak
+        ? smoothPeak * 0.97 + framePeak * 0.03
+        : smoothPeak * 0.9998 + framePeak * 0.0002;
+      const amp = (H * 0.22) / smoothPeak;
+
+      // Centre line
+      ctx.strokeStyle = 'rgba(255,255,255,.04)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+
+      // Left channel (blue, upper half)
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(123,159,255,.75)';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < N; i++) {
+        const x = (i / (N - 1)) * W;
+        const y = H / 2 - L[i] * amp;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       }
-      const fft = eng.fftAnalyser.getValue();
-      const bins = fft.length;                        // 1024
-      const sr = Tone.getContext().sampleRate;
-      const binHz = sr / 2048;
-      const minFreq = 30, maxFreq = 12000;
-      const logMin = Math.log2(minFreq), logMax = Math.log2(maxFreq);
+      ctx.stroke();
 
-      // Shift existing waterfall down by 1 row
-      const img = wfCtx.getImageData(0, 0, W, H - 1);
-      wfCtx.putImageData(img, 0, 1);
-
-      // Paint new row at top (log-scaled frequency axis)
-      const row = wfCtx.createImageData(W, 1);
-      for (let x = 0; x < W; x++) {
-        const freq = Math.pow(2, logMin + (x / W) * (logMax - logMin));
-        const binIdx = Math.min(Math.round(freq / binHz), bins - 1);
-        const [r,g,b] = wfColor(fft[binIdx]);
-        const p = x * 4;
-        row.data[p]=r; row.data[p+1]=g; row.data[p+2]=b; row.data[p+3]=255;
+      // Right channel (purple, slightly offset for stereo feel)
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(192,132,252,.55)';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < N; i++) {
+        const x = (i / (N - 1)) * W;
+        const y = H / 2 - R[i] * amp;
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       }
-      wfCtx.putImageData(row, 0, 0);
-      ctx.drawImage(wfBuf, 0, 0);
+      ctx.stroke();
 
     } else {
-      wfBuf = null;
-      canvas.width = W; canvas.height = H;
-      ctx.clearRect(0, 0, W, H);
+      smoothPeak = 0.001;
       phase += 0.012;
-      ctx.beginPath(); ctx.strokeStyle='rgba(123,159,255,.16)'; ctx.lineWidth=1;
-      for(let i=0;i<=W;i++){const y=H/2+Math.sin(i/W*Math.PI*4+phase)*2.2;i?ctx.lineTo(i,y):ctx.moveTo(i,y)}
+      ctx.beginPath(); ctx.strokeStyle = 'rgba(123,159,255,.16)'; ctx.lineWidth = 1;
+      for (let i = 0; i <= W; i++) { const y = H/2 + Math.sin(i/W*Math.PI*4 + phase)*2.2; i ? ctx.lineTo(i,y) : ctx.moveTo(i,y); }
       ctx.stroke();
     }
     waveRaf = requestAnimationFrame(draw);
