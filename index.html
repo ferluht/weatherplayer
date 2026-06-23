@@ -83,7 +83,7 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 .map-lbl{color:var(--dim)}
 .map-val{color:var(--accent);font-family:monospace;font-size:.73rem}
 .bar-bg{height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
-.bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width 1.8s ease}
+.bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px}
 .right-col{position:relative}
 .right-stack{position:absolute;inset:0;overflow:hidden;display:flex;flex-direction:column;gap:13px}
 .right-stack>.panel{flex:1;display:flex;flex-direction:column;min-height:0}
@@ -189,7 +189,7 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
       <div class="right-col">
       <div class="right-stack">
         <div class="panel">
-          <div class="ptitle">Waterfall</div>
+          <div class="ptitle">Waveform</div>
           <canvas id="waveCanvas"></canvas>
           <div class="osc-pane" id="oscPane">
             <div class="osc-cell"><canvas id="oscL0"></canvas><span class="osc-lbl" id="oscLblL0">L₁</span></div>
@@ -313,8 +313,8 @@ function computeWaveCoeffs(temps) {
   const c = temps.map(t=>t-mean);
   const mx = Math.max(...c.map(Math.abs), 0.001);
   const norm = c.map(v=>v/mx);
-  const real = new Array(numH+1).fill(0); // cosine coefficients for PeriodicWave
-  const imag = new Array(numH+1).fill(0); // sine coefficients
+  const real = new Array(numH+1).fill(0);
+  const imag = new Array(numH+1).fill(0);
   for (let k=1; k<=numH; k++) {
     let re=0, im=0;
     for (let n=0; n<N; n++) {
@@ -435,7 +435,7 @@ function weatherToMusic(w, sessionKey) {
 
   // Cloud cover → filter (log scale — dramatic difference)
   const filterHz = Math.round(Math.pow(10, lerp(Math.log10(11000), Math.log10(200), clouds/100)));
-  const filterQ  = lerp(0.5, 2.4, clouds/100);
+  const filterQ  = lerp(0.5, 0.78, clouds/100);
 
   // Brightness (harmonic gain envelope shape)
   const brightness = isStorm ? 0.04 : isFog ? 0.12 : isSnow
@@ -453,11 +453,11 @@ function weatherToMusic(w, sessionKey) {
 
   // Reverb
   const revDecay = clamp(
-    isFog?9+humidity/100*14 : isSnow?5+humidity/100*6 : 0.5+(humidity/100)*22,
-    0.5, 28);
+    isFog?4+humidity/100*5 : isSnow?2+humidity/100*3 : 0.5+(humidity/100)*8,
+    0.5, 10);
   const revWet = clamp(
-    isFog?0.45 : isSnow?0.28 : 0.03+(humidity/100)*0.32,
-    0.03, 0.48);
+    isFog?0.38 : isSnow?0.22 : 0.03+(humidity/100)*0.28,
+    0.03, 0.42);
 
   // Pressure → FM depth modifier (low pressure = more instability)
   const pressNorm     = clamp((pressure-960)/80, 0, 1);
@@ -481,11 +481,13 @@ function weatherToMusic(w, sessionKey) {
     : windNorm>0.5 ? windNorm*0.6
     : rainOn ? 0.2 : clamp(windNorm*0.4, 0.02, 0.5);
 
-  // Wind direction → slow phase drift LFO rate on R oscillators
-  // N(0°)=slowest, S(180°)=fastest — creates Lissajous rotation visible on XY scope
-  const windDirRad     = (windDir / 360) * Math.PI * 2;
-  const windPhaseRate  = 0.03 + (1 - Math.cos(windDirRad)) * 0.09; // 0.03–0.21 Hz
-  const windPhaseDepth = clamp(windNorm, 0, 1) * 16;               // 0–16 cents wobble on R
+  // Wind direction → FM modulation balance between the two FM stages
+  // Rotates through FM character: N=balanced, E=fm01 dominant (bright), W=fm12 dominant (chaotic)
+  const windDirRad   = (windDir / 360) * Math.PI * 2;
+  const fm01WindMult = 1 + Math.sin(windDirRad) * 0.70; // 0.30–1.70× on carrier modulation
+  const fm12WindMult = 1 + Math.cos(windDirRad) * 0.70; // 0.30–1.70× on sub-modulation
+  const windPhaseRate  = 0.05;
+  const windPhaseDepth = 0;
 
   const pct    = (v,a,b) => Math.round(clamp((v-a)/(b-a)*100,0,100));
   const logPct = (v,a,b) => Math.round(clamp((Math.log10(v)-Math.log10(a))/(Math.log10(b)-Math.log10(a))*100,0,100));
@@ -493,12 +495,13 @@ function weatherToMusic(w, sessionKey) {
   return {
     padNotes, chordName,
     filterHz, filterQ, brightness,
-    windBassGain, windMidGain, windHighGain, windLFORate, windDetune,
+    windNorm, windBassGain, windMidGain, windHighGain, windLFORate, windDetune,
     revDecay, revWet, pressNorm, pressureFMBoost,
     subPulseGain, subPulseRate,
     rainOn, rainIntervalMs, rainNoiseLvl,
     isSnow, snowIntervalMs,
     gustRate,
+    fm01WindMult, fm12WindMult,
     windPhaseRate, windPhaseDepth,
     vis:{
       warmth:    pct(temp,-30,45)/100,
@@ -518,8 +521,8 @@ function weatherToMusic(w, sessionKey) {
       {label:rainOn?'Rain':isSnow?'Snow':'Precip', sub:'→',
        val:rainOn?(1000/rainIntervalMs).toFixed(1)+'/s':isSnow&&snowIntervalMs?(1000/snowIntervalMs).toFixed(2)+'/s':'none',
        pct:rainOn?clamp(precip/10,0,1)*100:isSnow?50:0},
-      {label:'Phase drift', sub:'wind dir →',
-       val:`${['N','NE','E','SE','S','SW','W','NW'][Math.round(windDir/45)%8]} · ${windPhaseRate.toFixed(2)}Hz`,
+      {label:'FM balance', sub:'wind dir →',
+       val:`${['N','NE','E','SE','S','SW','W','NW'][Math.round(windDir/45)%8]} · ${fm01WindMult.toFixed(2)}/${fm12WindMult.toFixed(2)}`,
        pct: Math.round(windDir/360*100)},
     ]
   };
@@ -605,20 +608,20 @@ async function buildEngine(p, sessionKey, lags) {
   const trioL = makeOscTrio([coeffs0,  coeffs1,  coeffs2 ], panL);
   const trioR = makeOscTrio([coeffsR0, coeffsR1, coeffsR2], panR);
 
-  // Wavetable morph: lerp curParts → tgtParts per 60ms tick
-  // Alpha is adaptive: computed each tick from tlSpeed so convergence is always ~99% per step
-  // R always uses a slower alpha (×0.6) to create natural stereo lag
+  // Wavetable morph: true linear interpolation from snapshot A → target B over the step duration.
+  // Each call to updateParams snapshots the current state as "from" and sets "to" from new params.
+  // morphTick advances wall-clock fraction f ∈ [0,1] and applies lerp(from, to, f) every 60ms.
   const cloneC = c => ({ real:[...c.real], imag:[...c.imag] });
-  let curCoeffsL = [coeffs0,  coeffs1,  coeffs2 ].map(cloneC);
-  let tgtCoeffsL = [coeffs0,  coeffs1,  coeffs2 ].map(cloneC);
-  let curCoeffsR = [coeffsR0, coeffsR1, coeffsR2].map(cloneC);
-  let tgtCoeffsR = [coeffsR0, coeffsR1, coeffsR2].map(cloneC);
+  let curCoeffsL  = [coeffs0,  coeffs1,  coeffs2 ].map(cloneC);
+  let fromCoeffsL = [coeffs0,  coeffs1,  coeffs2 ].map(cloneC);
+  let tgtCoeffsL  = [coeffs0,  coeffs1,  coeffs2 ].map(cloneC);
+  let curCoeffsR  = [coeffsR0, coeffsR1, coeffsR2].map(cloneC);
+  let fromCoeffsR = [coeffsR0, coeffsR1, coeffsR2].map(cloneC);
+  let tgtCoeffsR  = [coeffsR0, coeffsR1, coeffsR2].map(cloneC);
   let morphTimer = null;
-  // ticksPerStep = (stepDuration_s × 1000) / 60ms; alpha for 99% convergence in N ticks:
-  // alpha = 1 - 0.01^(1/N); clamped so it's never too slow (1×) or too snappy (>100×)
-  function morphAlpha() {
-    const N = clamp((60 / tlSpeed * 1000) / 60, 4, 1200); // ticks per step
-    return clamp(1 - Math.pow(0.01, 1/N), 0.008, 0.40);
+  let stepStartMs = 0, stepDurMs = 0;
+  function morphFraction() {
+    return stepDurMs > 0 ? Math.min(1, (Date.now() - stepStartMs) / stepDurMs) : 1;
   }
 
   function startMorph() { morphTimer = setInterval(morphTick, 60); }
@@ -717,10 +720,9 @@ async function buildEngine(p, sessionKey, lags) {
   }
 
   // ── Morph state ──────────────────────────────────────
-  // Shared (master filter, reverb) — single target, lerped in log-space for filter
-  let tgtShared = { filterHz: p.filterHz, revWet: p.revWet };
-  let curShared = { ...tgtShared };
-  // Per-channel audio: L (fast, AL) and R (slow, AR) — same targets, different convergence
+  let fromShared = { filterHz: p.filterHz, revWet: p.revWet };
+  let tgtShared  = { filterHz: p.filterHz, revWet: p.revWet };
+  let curShared  = { ...fromShared };
   const mkAudio = () => ({
     fm01g: mi01*freqs0[0], fm12g: mi12*freqs0[1], brightness: p.brightness,
     windBass: p.windBassGain, windMid: p.windMidGain, windHigh: p.windHighGain,
@@ -728,84 +730,81 @@ async function buildEngine(p, sessionKey, lags) {
     rainNoise: p.rainNoiseLvl, windDetune: p.windDetune ?? 0,
     windPhaseRate: p.windPhaseRate ?? 0.05, windPhaseDepth: p.windPhaseDepth ?? 0,
   });
-  let tgtAudio = mkAudio();
+  let fromAudio = mkAudio();
+  let tgtAudio  = mkAudio();
   let curAudioL = mkAudio(), curAudioR = mkAudio();
   let phaseDriftTime = 0;
 
   function morphTick() {
-    const AL = morphAlpha();
-    const AR = AL * 0.60; // R always lags behind L for stereo depth
+    const f  = morphFraction();
+    const RT = 0.065; // AudioParam ramp covers one tick gap — sample-accurate glide
+    const linI = (a, b) => a + (b - a) * f;
+    const logI = (a, b) => Math.exp(Math.log(Math.max(a,0.1)) + (Math.log(Math.max(b,0.1)) - Math.log(Math.max(a,0.1))) * f);
 
-    // Log-lerp for filterHz (perceptually linear); linear for revWet
-    const logL = (c,t,a) => Math.exp(Math.log(Math.max(c,0.1)) + (Math.log(Math.max(t,0.1))-Math.log(Math.max(c,0.1)))*a);
-    const linL = (c,t,a) => Math.abs(t-c)>0.0001 ? c+(t-c)*a : t;
-    curShared.filterHz = logL(curShared.filterHz, tgtShared.filterHz, AL);
-    curShared.revWet   = linL(curShared.revWet,   tgtShared.revWet,   AL);
-    masterFilter.frequency.value = curShared.filterHz;
-    masterReverb.wet.value       = curShared.revWet;
+    // Shared — log-interp for filter (perceptually linear), linear for reverb
+    curShared.filterHz = logI(fromShared.filterHz, tgtShared.filterHz);
+    curShared.revWet   = linI(fromShared.revWet,   tgtShared.revWet);
+    masterFilter.frequency.rampTo(curShared.filterHz, RT);
+    masterReverb.wet.rampTo(curShared.revWet, RT);
 
-    // Lerp per-channel audio params
-    const lerpAudio = (cur, tgt, a) => {
-      for (const k in tgt) cur[k] = linL(cur[k], tgt[k], a);
-    };
-    lerpAudio(curAudioL, tgtAudio, AL);
-    lerpAudio(curAudioR, tgtAudio, AR);
+    // Per-channel audio — both channels use same fraction; stereo difference comes from waveform windows
+    for (const k in tgtAudio) {
+      curAudioL[k] = linI(fromAudio[k], tgtAudio[k]);
+      curAudioR[k] = curAudioL[k];
+    }
 
     // Apply L
     const [g0L,g1L,g2L] = trioL.gains;
-    g0L.gain.value = 0.42*curAudioL.brightness;
-    g1L.gain.value = 0.32*curAudioL.brightness;
-    g2L.gain.value = 0.22*curAudioL.brightness;
-    trioL.fm01.gain.value = curAudioL.fm01g;
-    trioL.fm12.gain.value  = curAudioL.fm12g;
-    // Wind detune: L pushed sharp, R pushed flat — beats at L-R beat frequency
-    // Each oscillator within a channel gets a slightly different offset so beating
-    // is complex rather than uniform (0: full, 1: 70%, 2: 50% of wind amount)
+    g0L.gain.rampTo(0.42*curAudioL.brightness, RT);
+    g1L.gain.rampTo(0.32*curAudioL.brightness, RT);
+    g2L.gain.rampTo(0.22*curAudioL.brightness, RT);
+    trioL.fm01.gain.rampTo(curAudioL.fm01g, RT);
+    trioL.fm12.gain.rampTo(curAudioL.fm12g, RT);
     const wL = curAudioL.windDetune;
     const wR = curAudioR.windDetune;
-    // Within L: osc0 sharp, osc1 flat, osc2 sharp (alternating)
-    trioL.oscs.forEach((o,i) => { o.detune.value = pitchCentsRef + wL * [1.0, -0.7, 0.5][i]; });
+    trioL.oscs.forEach((o,i) => { o.detune.rampTo(pitchCentsRef + wL * [1.0, -0.7, 0.5][i], RT); });
     // Apply R
     const [g0R,g1R,g2R] = trioR.gains;
-    g0R.gain.value = 0.42*curAudioR.brightness;
-    g1R.gain.value = 0.32*curAudioR.brightness;
-    g2R.gain.value = 0.22*curAudioR.brightness;
-    trioR.fm01.gain.value = curAudioR.fm01g;
-    trioR.fm12.gain.value  = curAudioR.fm12g;
-    // Within R: mirrored — osc0 flat, osc1 sharp, osc2 flat + slow phase drift from wind direction
+    g0R.gain.rampTo(0.42*curAudioR.brightness, RT);
+    g1R.gain.rampTo(0.32*curAudioR.brightness, RT);
+    g2R.gain.rampTo(0.22*curAudioR.brightness, RT);
+    trioR.fm01.gain.rampTo(curAudioR.fm01g, RT);
+    trioR.fm12.gain.rampTo(curAudioR.fm12g, RT);
     phaseDriftTime += 0.06;
     const phaseDrift = Math.sin(phaseDriftTime * curAudioR.windPhaseRate * Math.PI * 2) * curAudioR.windPhaseDepth;
-    trioR.oscs.forEach((o,i) => { o.detune.value = pitchCentsRef + wR * [-1.0, 0.7, -0.5][i] + phaseDrift; });
-    // Shared wind/sub
-    windBassG.gain.value        = curAudioL.windBass;
-    windMidG.gain.value         = curAudioL.windMid;
-    windHighG.gain.value        = curAudioL.windHigh;
-    windMidLFO.frequency.value  = curAudioL.windLFO;
-    // Rain noise — always morphed; gate MetalSynth drops by morphed level
-    rainNoiseG.gain.value = curAudioL.rainNoise;
+    trioR.oscs.forEach((o,i) => { o.detune.rampTo(pitchCentsRef + wR * [-1.0, 0.7, -0.5][i] + phaseDrift, RT); });
+    // Shared wind
+    windBassG.gain.rampTo(curAudioL.windBass, RT);
+    windMidG.gain.rampTo(curAudioL.windMid, RT);
+    windHighG.gain.rampTo(curAudioL.windHigh, RT);
+    windMidLFO.frequency.rampTo(curAudioL.windLFO, RT);
+    rainNoiseG.gain.rampTo(curAudioL.rainNoise, RT);
 
-    // Waveform coefficients — L fast, R slow
-    let dirtyL = false, dirtyR = false;
-    for (let v=0;v<3;v++) {
-      const nH = curCoeffsL[v].real.length;
-      for (let h=0;h<nH;h++) {
-        const drL=tgtCoeffsL[v].real[h]-curCoeffsL[v].real[h];
-        const diL=tgtCoeffsL[v].imag[h]-curCoeffsL[v].imag[h];
-        if(Math.abs(drL)>0.0005){curCoeffsL[v].real[h]+=drL*AL;dirtyL=true;}else curCoeffsL[v].real[h]=tgtCoeffsL[v].real[h];
-        if(Math.abs(diL)>0.0005){curCoeffsL[v].imag[h]+=diL*AL;dirtyL=true;}else curCoeffsL[v].imag[h]=tgtCoeffsL[v].imag[h];
-        const drR=tgtCoeffsR[v].real[h]-curCoeffsR[v].real[h];
-        const diR=tgtCoeffsR[v].imag[h]-curCoeffsR[v].imag[h];
-        if(Math.abs(drR)>0.0005){curCoeffsR[v].real[h]+=drR*AR;dirtyR=true;}else curCoeffsR[v].real[h]=tgtCoeffsR[v].real[h];
-        if(Math.abs(diR)>0.0005){curCoeffsR[v].imag[h]+=diR*AR;dirtyR=true;}else curCoeffsR[v].imag[h]=tgtCoeffsR[v].imag[h];
+    // Waveform coefficients — true linear interpolation per coefficient
+    for (let v = 0; v < 3; v++) {
+      const nH = tgtCoeffsL[v].real.length;
+      for (let h = 0; h < nH; h++) {
+        curCoeffsL[v].real[h] = linI(fromCoeffsL[v].real[h], tgtCoeffsL[v].real[h]);
+        curCoeffsL[v].imag[h] = linI(fromCoeffsL[v].imag[h], tgtCoeffsL[v].imag[h]);
+        curCoeffsR[v].real[h] = linI(fromCoeffsR[v].real[h], tgtCoeffsR[v].real[h]);
+        curCoeffsR[v].imag[h] = linI(fromCoeffsR[v].imag[h], tgtCoeffsR[v].imag[h]);
       }
     }
-    if (dirtyL) try { trioL.applyCoeffs(curCoeffsL); } catch(e){}
-    if (dirtyR) try { trioR.applyCoeffs(curCoeffsR); } catch(e){}
+    try { trioL.applyCoeffs(curCoeffsL); } catch(e){}
+    try { trioR.applyCoeffs(curCoeffsR); } catch(e){}
   }
 
   // ── Update (called every timeline step) ──────────────
   function updateParams(np, t, newLags) {
-    // Update waveform targets
+    // Snapshot current interpolated state as the new "from"
+    fromCoeffsL = curCoeffsL.map(cloneC);
+    fromCoeffsR = curCoeffsR.map(cloneC);
+    fromShared  = { ...curShared };
+    fromAudio   = { ...curAudioL };
+    stepStartMs = Date.now();
+    stepDurMs   = t * 1000;
+
+    // Compute new targets
     if (newLags) {
       tgtCoeffsL[0] = computeWaveCoeffs(newLags.temps0);
       tgtCoeffsL[1] = computeWaveCoeffs(newLags.temps1);
@@ -815,23 +814,21 @@ async function buildEngine(p, sessionKey, lags) {
       tgtCoeffsR[2] = computeWaveCoeffs(newLags.tempsR2 ?? newLags.temps2);
       const nmi01 = computeModIndex(newLags.temps0, newLags.temps1) + np.pressureFMBoost;
       const nmi12 = computeModIndex(newLags.temps1, newLags.temps2) + np.pressureFMBoost*0.7;
-      tgtAudio.fm01g = nmi01 * np.padNotes[0];
-      tgtAudio.fm12g = nmi12 * np.padNotes[1];
+      tgtAudio.fm01g = nmi01 * np.padNotes[0] * (np.fm01WindMult ?? 1);
+      tgtAudio.fm12g = nmi12 * np.padNotes[1] * (np.fm12WindMult ?? 1);
     }
-    // All audio targets — morph loop glides L and R toward them at different rates
-    tgtShared.filterHz  = np.filterHz;
-    tgtShared.revWet    = np.revWet;
-    tgtAudio.brightness = np.brightness;
-    tgtAudio.windBass   = np.windBassGain;
-    tgtAudio.windMid    = np.windMidGain;
-    tgtAudio.windHigh   = np.windHighGain;
-    tgtAudio.windLFO    = np.windLFORate;
+    tgtShared.filterHz       = np.filterHz;
+    tgtShared.revWet         = np.revWet;
+    tgtAudio.brightness      = np.brightness;
+    tgtAudio.windBass        = np.windBassGain;
+    tgtAudio.windMid         = np.windMidGain;
+    tgtAudio.windHigh        = np.windHighGain;
+    tgtAudio.windLFO         = np.windLFORate;
     tgtAudio.windDetune      = np.windDetune ?? 0;
     tgtAudio.rainNoise       = np.rainNoiseLvl;
     tgtAudio.windPhaseRate   = np.windPhaseRate ?? 0.05;
     tgtAudio.windPhaseDepth  = np.windPhaseDepth ?? 0;
 
-    // Event-based sounds (scheduled, not morphed)
     scheduleGust(np.gustRate);
   }
 
@@ -861,7 +858,7 @@ async function buildEngine(p, sessionKey, lags) {
 
   const getCoeffs = () => ({ L: curCoeffsL, R: curCoeffsR });
 
-  return { startAll, stopAll, updateParams, setPitchCents, getCoeffs, dispose, analyser, analyserL, analyserR, xyBufL, xyBufR, fftAnalyser };
+  return { startAll, stopAll, updateParams, setPitchCents, getCoeffs, dispose, analyser, analyserL, analyserR, xyBufL, xyBufR, fftAnalyser, morphFraction };
 }
 
 // ══════════════════════════════════════════════════════
@@ -986,6 +983,76 @@ function drawOscPane() {
 function startOscPane() { if(oscRaf)cancelAnimationFrame(oscRaf); drawOscPane(); }
 
 // ══════════════════════════════════════════════════════
+//  LIVE UI INTERPOLATION LOOP
+// ══════════════════════════════════════════════════════
+let liveRenderRaf = null;
+const _logPct = (v,mn,mx) => Math.max(0,Math.min(100,(Math.log(Math.max(v,mn))-Math.log(mn))/(Math.log(mx)-Math.log(mn))*100));
+
+function liveRenderTick() {
+  liveRenderRaf = requestAnimationFrame(liveRenderTick);
+  if (!eng || !audioPlaying || !timeline.length) return;
+
+  const f = eng.morphFraction();
+  const fromE = timeline[prevTlIdx] ?? timeline[0];
+  const toE   = timeline[tlIdx];
+  if (!fromE || !toE) return;
+
+  const linI = (a, b) => a + (b - a) * f;
+  const fw = fromE.w, tw = toE.w;
+  const fp = fromE.params, tp = toE.params;
+
+  // ── Weather stats ──
+  const g = id => document.getElementById(id);
+  if (g('wv-temp'))   g('wv-temp').textContent   = Math.round(linI(fw.temperature_2m, tw.temperature_2m)) + '°C';
+  if (g('wv-cloud'))  g('wv-cloud').textContent  = Math.round(linI(fw.cloud_cover, tw.cloud_cover)) + '%';
+  if (g('wv-humid'))  g('wv-humid').textContent  = Math.round(linI(fw.relative_humidity_2m, tw.relative_humidity_2m)) + '%';
+  if (g('wv-press'))  g('wv-press').textContent  = Math.round(linI(fw.surface_pressure, tw.surface_pressure)) + ' hPa';
+  if (g('wv-precip')) g('wv-precip').textContent = linI(fw.precipitation||0, tw.precipitation||0).toFixed(1) + ' mm';
+  // Wind: circular interpolation for direction
+  if (g('wv-wind')) {
+    let diff = (tw.wind_direction_10m||0) - (fw.wind_direction_10m||0);
+    if (diff >  180) diff -= 360;
+    if (diff < -180) diff += 360;
+    const wdir = ((fw.wind_direction_10m||0) + diff * f + 360) % 360;
+    const dirs = ['N','NE','E','SE','S','SW','W','NW'];
+    g('wv-wind').textContent = Math.round(linI(fw.wind_speed_10m, tw.wind_speed_10m)) + ' km/h ' + dirs[Math.round(wdir/45)%8];
+  }
+
+  // ── Sound mapping bars ──
+  const filterHz  = linI(fp.filterHz,  tp.filterHz);
+  const brightness = linI(fp.brightness, tp.brightness);
+  const fmDepth   = linI(fp.pressureFMBoost, tp.pressureFMBoost);
+  const windNorm  = linI(fp.windNorm,  tp.windNorm);
+  const revDecay  = linI(fp.revDecay,  tp.revDecay);
+  // Wind direction interpolation (circular) for FM balance display
+  let wdiff2 = (tp.bars[6]?.pct||0) - (fp.bars[6]?.pct||0);
+  if (wdiff2 > 50) wdiff2 -= 100; if (wdiff2 < -50) wdiff2 += 100;
+  const windDirPct = ((fp.bars[6]?.pct||0) + wdiff2 * f + 100) % 100;
+  const windDirRad2 = windDirPct / 100 * Math.PI * 2;
+  const fm01Mult = 1 + Math.sin(windDirRad2) * 0.70;
+  const fm12Mult = 1 + Math.cos(windDirRad2) * 0.70;
+  const dirs2 = ['N','NE','E','SE','S','SW','W','NW'];
+  const windDirStr = dirs2[Math.round(windDirPct / 100 * 8) % 8];
+
+  const bars = [
+    { pct: brightness*100, val: Math.round(brightness*100)+'%' },
+    { pct: _logPct(filterHz,200,11000), val: filterHz<1000 ? Math.round(filterHz)+'Hz' : (filterHz/1000).toFixed(1)+'kHz' },
+    { pct: fmDepth*100,  val: Math.round(fmDepth*100)+'%' },
+    { pct: windNorm*100, val: Math.round(windNorm*100)+'%' },
+    { pct: Math.max(0,Math.min(100,(revDecay-0.5)/(10-0.5)*100)), val: revDecay.toFixed(1)+'s' },
+    { pct: linI(fp.bars[5]?.pct||0, tp.bars[5]?.pct||0), val: null },
+    { pct: windDirPct, val: `${windDirStr} · ${fm01Mult.toFixed(2)}/${fm12Mult.toFixed(2)}` },
+  ];
+  bars.forEach((b, i) => {
+    const fill = g('map-fill-'+i); if (fill) fill.style.width = b.pct.toFixed(1)+'%';
+    if (b.val !== null) { const val = g('map-val-'+i); if (val) val.textContent = b.val; }
+  });
+}
+
+function startLiveRender() { if (liveRenderRaf) cancelAnimationFrame(liveRenderRaf); liveRenderTick(); }
+function stopLiveRender()  { if (liveRenderRaf) { cancelAnimationFrame(liveRenderRaf); liveRenderRaf = null; } }
+
+// ══════════════════════════════════════════════════════
 //  GENERATIVE GRAPHICS
 // ══════════════════════════════════════════════════════
 const genCanvas = document.getElementById('genCanvas');
@@ -1083,6 +1150,7 @@ function startGen(){if(genRaf)cancelAnimationFrame(genRaf);buildParticles();draw
 // ══════════════════════════════════════════════════════
 let timeline    = [];
 let tlIdx       = 0;
+let prevTlIdx   = 0;
 let tlPlaying   = false;
 let tlTimer     = null;
 let tlSpeed     = 4;
@@ -1105,6 +1173,7 @@ function computeLagWindows(idx) {
 }
 
 function tlGoto(idx, transition) {
+  prevTlIdx = tlIdx;
   tlIdx = clamp(idx, 0, timeline.length-1);
   const entry = timeline[tlIdx];
   const t = transition ?? Math.min(stepDuration()*.85, 5);
@@ -1150,14 +1219,14 @@ function renderWeather(w, loc) {
     <div class="w-loc">${loc.name}</div>
     ${dateLabel?`<div class="w-date">${dateLabel}</div>`:''}
     <div class="w-hero"><div class="w-icon">${icon}</div>
-      <div><div class="w-temp">${Math.round(w.temperature_2m)}°C</div><div class="w-desc">${desc}</div></div>
+      <div><div class="w-temp" id="wv-temp">${Math.round(w.temperature_2m)}°C</div><div class="w-desc">${desc}</div></div>
     </div>
     <div class="w-grid">
-      <div class="w-stat"><div class="sl">Wind</div><div class="sv">${Math.round(w.wind_speed_10m)} km/h ${dir}</div></div>
-      <div class="w-stat"><div class="sl">Cloud cover</div><div class="sv">${Math.round(w.cloud_cover)}%</div></div>
-      <div class="w-stat"><div class="sl">Humidity</div><div class="sv">${Math.round(w.relative_humidity_2m)}%</div></div>
-      <div class="w-stat"><div class="sl">Pressure</div><div class="sv">${Math.round(w.surface_pressure)} hPa</div></div>
-      <div class="w-stat"><div class="sl">Precipitation</div><div class="sv">${(w.precipitation||0).toFixed(1)} mm</div></div>
+      <div class="w-stat"><div class="sl">Wind</div><div class="sv" id="wv-wind">${Math.round(w.wind_speed_10m)} km/h ${dir}</div></div>
+      <div class="w-stat"><div class="sl">Cloud cover</div><div class="sv" id="wv-cloud">${Math.round(w.cloud_cover)}%</div></div>
+      <div class="w-stat"><div class="sl">Humidity</div><div class="sv" id="wv-humid">${Math.round(w.relative_humidity_2m)}%</div></div>
+      <div class="w-stat"><div class="sl">Pressure</div><div class="sv" id="wv-press">${Math.round(w.surface_pressure)} hPa</div></div>
+      <div class="w-stat"><div class="sl">Precipitation</div><div class="sv" id="wv-precip">${(w.precipitation||0).toFixed(1)} mm</div></div>
     </div>`;
 }
 
@@ -1166,10 +1235,10 @@ function renderMappings(p) {
   document.getElementById('mPanel').innerHTML=`
     <div class="ptitle">Sound</div>
     <div style="margin-bottom:11px">${keyBadge}</div>
-    ${p.bars.map(b=>`
+    ${p.bars.map((b,i)=>`
       <div class="map-row">
-        <div class="map-hdr"><span class="map-lbl">${b.label} <span style="opacity:.5;font-size:.68rem">${b.sub}</span></span><span class="map-val">${b.val}</span></div>
-        <div class="bar-bg"><div class="bar-fill" style="width:${b.pct}%"></div></div>
+        <div class="map-hdr"><span class="map-lbl">${b.label} <span style="opacity:.5;font-size:.68rem">${b.sub}</span></span><span class="map-val" id="map-val-${i}">${b.val}</span></div>
+        <div class="bar-bg"><div class="bar-fill" id="map-fill-${i}" style="width:${b.pct}%"></div></div>
       </div>`).join('')}`;
 }
 
@@ -1353,6 +1422,7 @@ playBtn.addEventListener('click', async()=>{
       const pitchSt = parseInt(pitchSliderEl.value);
       if (pitchSt !== 0) eng.setPitchCents(pitchSt * 100);
       audioPlaying=true;
+      prevTlIdx=tlIdx;
       tlPlay();
       const totalMins=Math.round(timeline.length/tlSpeed);
       statusEl.textContent=`Playing · ${sessionKey.keyName} · ${tlSpeed}× · ~${totalMins} min`;
@@ -1394,6 +1464,7 @@ show('idle');
 startGen();
 startWave();
 startOscPane();
+startLiveRender();
 </script>
 </body>
 </html>
