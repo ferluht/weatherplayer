@@ -88,8 +88,10 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 .bar-bg{height:3px;background:rgba(255,255,255,.06);border-radius:2px;overflow:hidden}
 .bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width 1.8s ease}
 /* right panel */
-.right-stack{display:flex;flex-direction:column;gap:13px}
-#waveCanvas{width:100%;height:80px;display:block;border-radius:8px;background:rgba(0,0,0,.25);margin-bottom:12px}
+.right-col{position:relative}
+.right-stack{position:absolute;inset:0;overflow:hidden;display:flex;flex-direction:column;gap:13px}
+.right-stack>.panel{flex:1;display:flex;flex-direction:column;min-height:0}
+#waveCanvas{width:100%;flex:1;min-height:0;display:block;border-radius:8px;background:rgba(255,255,255,.04);margin-bottom:12px}
 .tl-wrap{margin-bottom:12px}
 .tl-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:2px;cursor:pointer;margin-bottom:7px}
 .tl-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width .4s linear;pointer-events:none}
@@ -189,9 +191,10 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
         <div class="panel" id="wPanel"></div>
         <div class="panel" id="mPanel" style="margin-top:13px"></div>
       </div>
+      <div class="right-col">
       <div class="right-stack">
         <div class="panel">
-          <div class="ptitle">Waveform</div>
+          <div class="ptitle">Waterfall</div>
           <canvas id="waveCanvas"></canvas>
           <div class="osc-pane" id="oscPane">
             <div class="osc-cell"><canvas id="oscL0"></canvas><span class="osc-lbl" id="oscLblL0">L₁</span></div>
@@ -229,6 +232,7 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
           </div>
           <p class="status" id="statusEl">Ready</p>
         </div>
+      </div>
       </div>
     </div>
   </div>
@@ -417,6 +421,7 @@ function getChordInKey(code, isMinor) {
 function weatherToMusic(w, sessionKey) {
   const temp     = w.temperature_2m       ?? 10;
   const wind     = w.wind_speed_10m       ?? 0;
+  const windDir  = w.wind_direction_10m   ?? 0;
   const clouds   = w.cloud_cover          ?? 50;
   const precip   = w.precipitation        ?? 0;
   const humidity = w.relative_humidity_2m ?? 60;
@@ -481,6 +486,12 @@ function weatherToMusic(w, sessionKey) {
     : windNorm>0.5 ? windNorm*0.6
     : rainOn ? 0.2 : clamp(windNorm*0.4, 0.02, 0.5);
 
+  // Wind direction → slow phase drift LFO rate on R oscillators
+  // N(0°)=slowest, S(180°)=fastest — creates Lissajous rotation visible on XY scope
+  const windDirRad     = (windDir / 360) * Math.PI * 2;
+  const windPhaseRate  = 0.03 + (1 - Math.cos(windDirRad)) * 0.09; // 0.03–0.21 Hz
+  const windPhaseDepth = clamp(windNorm, 0, 1) * 16;               // 0–16 cents wobble on R
+
   const pct    = (v,a,b) => Math.round(clamp((v-a)/(b-a)*100,0,100));
   const logPct = (v,a,b) => Math.round(clamp((Math.log10(v)-Math.log10(a))/(Math.log10(b)-Math.log10(a))*100,0,100));
 
@@ -493,6 +504,7 @@ function weatherToMusic(w, sessionKey) {
     rainOn, rainIntervalMs, rainNoiseLvl,
     isSnow, snowIntervalMs,
     gustRate,
+    windPhaseRate, windPhaseDepth,
     vis:{
       warmth:    pct(temp,-30,45)/100,
       windiness: windNorm,
@@ -511,6 +523,9 @@ function weatherToMusic(w, sessionKey) {
       {label:rainOn?'Rain':isSnow?'Snow':'Precip', sub:'→',
        val:rainOn?(1000/rainIntervalMs).toFixed(1)+'/s':isSnow&&snowIntervalMs?(1000/snowIntervalMs).toFixed(2)+'/s':'none',
        pct:rainOn?clamp(precip/10,0,1)*100:isSnow?50:0},
+      {label:'Phase drift', sub:'wind dir →',
+       val:`${['N','NE','E','SE','S','SW','W','NW'][Math.round(windDir/45)%8]} · ${windPhaseRate.toFixed(2)}Hz`,
+       pct: Math.round(windDir/360*100)},
     ]
   };
 }
@@ -538,7 +553,17 @@ async function buildEngine(p, sessionKey, lags) {
   masterFade.chain(masterFilter, masterReverb, loudnessGain, masterCompressor, masterLimiter, Tone.Destination);
   masterLimiter.connect(analyser);
   masterLimiter.connect(meter);
-
+  const fftAnalyser = new Tone.Analyser('fft', 2048);
+  const rawCtx = Tone.getContext().rawContext;
+  const splitter = rawCtx.createChannelSplitter(2);
+  const analyserL = rawCtx.createAnalyser();
+  const analyserR = rawCtx.createAnalyser();
+  analyserL.fftSize = 1024; analyserR.fftSize = 1024;
+  masterLimiter.connect(fftAnalyser);
+  masterLimiter.connect(splitter);
+  splitter.connect(analyserL, 0); splitter.connect(analyserR, 1);
+  const xyBufL = new Float32Array(analyserL.fftSize);
+  const xyBufR = new Float32Array(analyserR.fftSize);
 
   // ── Stereo FM oscillator pairs (L/R with different lag windows + different morph speed) ──
   // L: current lag windows, converges faster.  R: 2h-offset windows, converges slower → natural lag.
@@ -706,9 +731,11 @@ async function buildEngine(p, sessionKey, lags) {
     windBass: p.windBassGain, windMid: p.windMidGain, windHigh: p.windHighGain,
     windLFO: p.windLFORate,
     rainNoise: p.rainNoiseLvl, windDetune: p.windDetune ?? 0,
+    windPhaseRate: p.windPhaseRate ?? 0.05, windPhaseDepth: p.windPhaseDepth ?? 0,
   });
   let tgtAudio = mkAudio();
   let curAudioL = mkAudio(), curAudioR = mkAudio();
+  let phaseDriftTime = 0;
 
   function morphTick() {
     const AL = morphAlpha();
@@ -750,8 +777,10 @@ async function buildEngine(p, sessionKey, lags) {
     g2R.gain.value = 0.22*curAudioR.brightness;
     trioR.fm01.gain.value = curAudioR.fm01g;
     trioR.fm12.gain.value  = curAudioR.fm12g;
-    // Within R: mirrored — osc0 flat, osc1 sharp, osc2 flat
-    trioR.oscs.forEach((o,i) => { o.detune.value = pitchCentsRef + wR * [-1.0, 0.7, -0.5][i]; });
+    // Within R: mirrored — osc0 flat, osc1 sharp, osc2 flat + slow phase drift from wind direction
+    phaseDriftTime += 0.06;
+    const phaseDrift = Math.sin(phaseDriftTime * curAudioR.windPhaseRate * Math.PI * 2) * curAudioR.windPhaseDepth;
+    trioR.oscs.forEach((o,i) => { o.detune.value = pitchCentsRef + wR * [-1.0, 0.7, -0.5][i] + phaseDrift; });
     // Shared wind/sub
     windBassG.gain.value        = curAudioL.windBass;
     windMidG.gain.value         = curAudioL.windMid;
@@ -802,8 +831,10 @@ async function buildEngine(p, sessionKey, lags) {
     tgtAudio.windMid    = np.windMidGain;
     tgtAudio.windHigh   = np.windHighGain;
     tgtAudio.windLFO    = np.windLFORate;
-    tgtAudio.windDetune = np.windDetune ?? 0;
-    tgtAudio.rainNoise  = np.rainNoiseLvl;
+    tgtAudio.windDetune      = np.windDetune ?? 0;
+    tgtAudio.rainNoise       = np.rainNoiseLvl;
+    tgtAudio.windPhaseRate   = np.windPhaseRate ?? 0.05;
+    tgtAudio.windPhaseDepth  = np.windPhaseDepth ?? 0;
 
     // Event-based sounds (scheduled, not morphed)
     scheduleGust(np.gustRate);
@@ -811,8 +842,9 @@ async function buildEngine(p, sessionKey, lags) {
 
   function dispose() {
     stopGust(); stopMorph(); stopLufs();
+    try{splitter.disconnect();}catch(e){}
     const all = [
-      masterFade, masterFilter, masterReverb, loudnessGain, masterCompressor, masterLimiter, meter,
+      masterFade, masterFilter, masterReverb, loudnessGain, masterCompressor, masterLimiter, meter, fftAnalyser,
       panL, panR,
       ...trioL.oscs, ...trioL.gains, trioL.fm01, trioL.fm12,
       ...trioR.oscs, ...trioR.gains, trioR.fm01, trioR.fm12,
@@ -834,44 +866,81 @@ async function buildEngine(p, sessionKey, lags) {
 
   const getCoeffs = () => ({ L: curCoeffsL, R: curCoeffsR });
 
-  return { startAll, stopAll, updateParams, setPitchCents, getCoeffs, dispose, analyser };
+  return { startAll, stopAll, updateParams, setPitchCents, getCoeffs, dispose, analyser, analyserL, analyserR, xyBufL, xyBufR, fftAnalyser };
 }
 
 // ══════════════════════════════════════════════════════
 //  WAVEFORM
 // ══════════════════════════════════════════════════════
+// Waterfall colour: page bg → dark navy → accent blue → accent purple → white
+function wfColor(db) {
+  const t = Math.max(0, Math.min(1, (db + 90) / 75)); // -90 dB=0, -15 dB=1
+  let r,g,b;
+  if (t < 0.35) { const s=t/0.35;
+    r=Math.round(7+s*10); g=Math.round(7+s*10); b=Math.round(15+s*60); }          // #07070f → dark navy
+  else if(t<0.60){ const s=(t-0.35)/0.25;
+    r=Math.round(17+s*106); g=Math.round(17+s*142); b=Math.round(75+s*180); }      // → accent blue #7b9fff
+  else if(t<0.80){ const s=(t-0.60)/0.20;
+    r=Math.round(123+s*69); g=Math.round(159-s*27); b=Math.round(255-s*3); }       // → accent purple #c084fc
+  else            { const s=(t-0.80)/0.20;
+    r=Math.round(192+s*63); g=Math.round(132+s*123); b=Math.round(252+s*3); }      // → white
+  return [r,g,b];
+}
+
 let waveRaf = null;
 function startWave() {
   const canvas = document.getElementById('waveCanvas');
   const ctx = canvas.getContext('2d');
   let phase = 0;
+  let wfBuf = null, wfCtx = null;
+
   function draw() {
-    canvas.width=canvas.offsetWidth; canvas.height=canvas.offsetHeight;
-    const W=canvas.width, H=canvas.height;
-    ctx.clearRect(0,0,W,H);
-    if (eng && audioPlaying) {
-      const data=eng.analyser.getValue();
-      const peak=Math.max(...data.map(Math.abs), 0.001);
-      const grad=ctx.createLinearGradient(0,0,W,0);
-      grad.addColorStop(0,'rgba(123,159,255,0)');
-      grad.addColorStop(.3,'rgba(123,159,255,.8)');
-      grad.addColorStop(.7,'rgba(192,132,252,.8)');
-      grad.addColorStop(1,'rgba(192,132,252,0)');
-      ctx.beginPath(); ctx.strokeStyle=grad; ctx.lineWidth=1.5;
-      data.forEach((v,i)=>{const x=(i/data.length)*W,y=H/2+(v/peak)*H*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
-      ctx.stroke();
-      ctx.beginPath(); ctx.strokeStyle='rgba(123,159,255,.1)'; ctx.lineWidth=5;
-      data.forEach((v,i)=>{const x=(i/data.length)*W,y=H/2+(v/peak)*H*.42;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});
-      ctx.stroke();
+    const W = canvas.offsetWidth || 300;
+    const H = canvas.offsetHeight || 200;
+
+    if (eng && audioPlaying && eng.fftAnalyser) {
+      if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H; }
+      // Recreate offscreen buffer on first run or resize
+      if (!wfBuf || wfBuf.width !== W || wfBuf.height !== H) {
+        wfBuf = document.createElement('canvas');
+        wfBuf.width = W; wfBuf.height = H;
+        wfCtx = wfBuf.getContext('2d');
+      }
+      const fft = eng.fftAnalyser.getValue();
+      const bins = fft.length;                        // 1024
+      const sr = Tone.getContext().sampleRate;
+      const binHz = sr / 2048;
+      const minFreq = 30, maxFreq = 12000;
+      const logMin = Math.log2(minFreq), logMax = Math.log2(maxFreq);
+
+      // Shift existing waterfall down by 1 row
+      const img = wfCtx.getImageData(0, 0, W, H - 1);
+      wfCtx.putImageData(img, 0, 1);
+
+      // Paint new row at top (log-scaled frequency axis)
+      const row = wfCtx.createImageData(W, 1);
+      for (let x = 0; x < W; x++) {
+        const freq = Math.pow(2, logMin + (x / W) * (logMax - logMin));
+        const binIdx = Math.min(Math.round(freq / binHz), bins - 1);
+        const [r,g,b] = wfColor(fft[binIdx]);
+        const p = x * 4;
+        row.data[p]=r; row.data[p+1]=g; row.data[p+2]=b; row.data[p+3]=255;
+      }
+      wfCtx.putImageData(row, 0, 0);
+      ctx.drawImage(wfBuf, 0, 0);
+
     } else {
-      phase+=.012;
+      wfBuf = null;
+      canvas.width = W; canvas.height = H;
+      ctx.clearRect(0, 0, W, H);
+      phase += 0.012;
       ctx.beginPath(); ctx.strokeStyle='rgba(123,159,255,.16)'; ctx.lineWidth=1;
       for(let i=0;i<=W;i++){const y=H/2+Math.sin(i/W*Math.PI*4+phase)*2.2;i?ctx.lineTo(i,y):ctx.moveTo(i,y)}
       ctx.stroke();
     }
-    waveRaf=requestAnimationFrame(draw);
+    waveRaf = requestAnimationFrame(draw);
   }
-  if(waveRaf)cancelAnimationFrame(waveRaf);
+  if (waveRaf) cancelAnimationFrame(waveRaf);
   draw();
 }
 
@@ -1016,16 +1085,6 @@ function drawGen(){
     gc.stroke();
   }
   particles.forEach(p=>{p.update();p.draw(gc);});
-  if(eng&&audioPlaying){
-    const data=eng.analyser.getValue();
-    const rms=Math.sqrt(data.reduce((s,x)=>s+x*x,0)/data.length);
-    const cx=W/2,cy=H/2,br=Math.min(W,H)*.13;
-    gc.beginPath();
-    data.forEach((x,i)=>{const a=(i/data.length)*Math.PI*2-Math.PI/2,r=br+x*br*.55,px=cx+Math.cos(a)*r,py=cy+Math.sin(a)*r;i?gc.lineTo(px,py):gc.moveTo(px,py);});
-    gc.closePath();
-    gc.strokeStyle=`rgba(123,159,255,${.05+rms*.18})`;gc.lineWidth=1;gc.stroke();
-    gc.strokeStyle=`rgba(192,132,252,${.025+rms*.08})`;gc.lineWidth=4;gc.stroke();
-  }
   genRaf=requestAnimationFrame(drawGen);
 }
 function startGen(){if(genRaf)cancelAnimationFrame(genRaf);buildParticles();drawGen();}
@@ -1048,11 +1107,11 @@ const stepDuration = () => 60/tlSpeed; // real seconds per data hour
 function computeLagWindows(idx) {
   return {
     temps0:  getTemperatureWindow(timeline, idx, 0,   24),  // L: 24h daily cycle
-    temps1:  getTemperatureWindow(timeline, idx, 24,  72),  // L: 3-day trend
-    temps2:  getTemperatureWindow(timeline, idx, 48,  48),  // L: 2-day arc
+    temps1:  getTemperatureWindow(timeline, idx, 24,  24),  // L: 24h, 1-day offset
+    temps2:  getTemperatureWindow(timeline, idx, 48,  24),  // L: 24h, 2-day offset
     tempsR0: getTemperatureWindow(timeline, idx, 12,  24),  // R: 24h, 12h offset
-    tempsR1: getTemperatureWindow(timeline, idx, 36,  72),  // R: 3-day, 12h offset
-    tempsR2: getTemperatureWindow(timeline, idx, 60,  48),  // R: 2-day, 12h offset
+    tempsR1: getTemperatureWindow(timeline, idx, 36,  24),  // R: 24h, 36h offset
+    tempsR2: getTemperatureWindow(timeline, idx, 60,  24),  // R: 24h, 60h offset
   };
 }
 
