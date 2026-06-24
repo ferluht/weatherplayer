@@ -572,13 +572,16 @@ async function buildEngine(p, sessionKey, lags) {
   // ── Master chain ──────────────────────────────────────
   const masterFade       = new Tone.Gain(0);
   const masterFilter     = new Tone.Filter({ frequency:p.filterHz, type:'lowpass', Q:p.filterQ });
-  const masterReverb     = new Tone.Reverb({ decay:clamp(p.revDecay,0.5,22), wet:p.revWet });
+  const isMobile         = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  const masterReverb     = isMobile
+    ? new Tone.Freeverb({ roomSize: Math.min(p.revDecay / 22, 0.95), dampening: 3000, wet: p.revWet })
+    : new Tone.Reverb({ decay:clamp(p.revDecay,0.5,22), wet:p.revWet });
   const loudnessGain     = new Tone.Gain(1);
   const masterCompressor = new Tone.Compressor({ threshold:-24, ratio:4, attack:0.003, release:0.25, knee:6 });
   const masterLimiter    = new Tone.Limiter(-1);
   const meter            = new Tone.Meter({ normalRange:false });
   const analyser         = new Tone.Analyser('waveform', 512);
-  await masterReverb.ready;
+  if (!isMobile) await masterReverb.ready;
   masterFade.chain(masterFilter, masterReverb, loudnessGain, masterCompressor, masterLimiter, Tone.Destination);
   masterLimiter.connect(analyser);
   masterLimiter.connect(meter);
@@ -685,8 +688,10 @@ async function buildEngine(p, sessionKey, lags) {
   const gustFilter = new Tone.Filter({ type:'bandpass', frequency:400, Q:0.5 });
   const gustEnv    = new Tone.AmplitudeEnvelope({ attack:0.35, decay:0.7, sustain:0, release:0.5 });
   const gustPan    = new Tone.Panner(0);
-  const gustRev    = new Tone.Reverb({ decay:1.6, wet:0.72 });
-  await gustRev.ready;
+  const gustRev    = isMobile
+    ? new Tone.Freeverb({ roomSize: 0.7, dampening: 3000, wet: 0.72 })
+    : new Tone.Reverb({ decay:1.6, wet:0.72 });
+  if (!isMobile) await gustRev.ready;
   const gustOut    = new Tone.Gain(0.28);
   gustNoise.chain(gustFilter, gustEnv, gustPan, gustRev, gustOut, masterFade);
   let gustTimer = null;
