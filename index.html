@@ -557,8 +557,11 @@ let audioPlaying = false;
 
 async function buildEngine(p, sessionKey, lags) {
   if (eng) { eng.dispose(); eng=null; }
-  Tone.setContext(new Tone.Context({ latencyHint: 'playback' }));
   await Tone.start();
+
+  // Larger scheduling buffers to prevent crackles on mobile / BT headphones
+  Tone.getContext().lookAhead = 0.5;
+  Tone.getContext().updateInterval = 0.1;
 
   // Resume AudioContext when BT headphones connect/disconnect on mobile
   const rawCtx0 = Tone.getContext().rawContext;
