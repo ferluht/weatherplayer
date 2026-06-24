@@ -580,17 +580,17 @@ async function buildEngine(p, sessionKey, lags) {
   const masterCompressor = new Tone.Compressor({ threshold:-24, ratio:4, attack:0.003, release:0.25, knee:6 });
   const masterLimiter    = new Tone.Limiter(-1);
   const meter            = new Tone.Meter({ normalRange:false });
-  const analyser         = new Tone.Analyser('waveform', 512);
+  const analyser         = new Tone.Analyser('waveform', isMobile ? 256 : 512);
   if (!isMobile) await masterReverb.ready;
   masterFade.chain(masterFilter, masterReverb, loudnessGain, masterCompressor, masterLimiter, Tone.Destination);
   masterLimiter.connect(analyser);
   masterLimiter.connect(meter);
-  const fftAnalyser = new Tone.Analyser('fft', 2048);
+  const fftAnalyser = new Tone.Analyser('fft', isMobile ? 512 : 2048);
   const rawCtx = Tone.getContext().rawContext;
   const splitter = rawCtx.createChannelSplitter(2);
   const analyserL = rawCtx.createAnalyser();
   const analyserR = rawCtx.createAnalyser();
-  analyserL.fftSize = 1024; analyserR.fftSize = 1024;
+  analyserL.fftSize = isMobile ? 512 : 1024; analyserR.fftSize = isMobile ? 512 : 1024;
   masterLimiter.connect(fftAnalyser);
   masterLimiter.connect(splitter);
   splitter.connect(analyserL, 0); splitter.connect(analyserR, 1);
@@ -660,7 +660,7 @@ async function buildEngine(p, sessionKey, lags) {
     return stepDurMs > 0 ? Math.min(1, (Date.now() - stepStartMs) / stepDurMs) : 1;
   }
 
-  function startMorph() { morphTimer = setInterval(morphTick, 60); }
+  function startMorph() { morphTimer = setInterval(morphTick, isMobile ? 120 : 60); }
   function stopMorph()  { if (morphTimer) { clearInterval(morphTimer); morphTimer = null; } }
 
   const padOscs = []; // removed — was causing constant-pitch tone overlay
@@ -838,7 +838,7 @@ async function buildEngine(p, sessionKey, lags) {
       }
     }
     const nowMs = Date.now();
-    if (nowMs - lastWaveApplyMs > 280) {
+    if (nowMs - lastWaveApplyMs > (isMobile ? 600 : 280)) {
       try { trioL.applyCoeffs(curCoeffsL); } catch(e){}
       try { trioR.applyCoeffs(curCoeffsR); } catch(e){}
       lastWaveApplyMs = nowMs;
