@@ -12,6 +12,16 @@
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:image" content="https://raw.githubusercontent.com/ferluht/weatherplayer/refs/heads/main/preview.jpg" />
 
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-JRN637J2H0"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-JRN637J2H0');
+</script>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>WeatherPlayer</title>
@@ -119,6 +129,9 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 #playBtn{flex:1;padding:12px;font-size:.9rem;letter-spacing:.04em;border-radius:11px}
 #stepBtn{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:11px;padding:12px 14px;font-size:.9rem}
 #stepBtn:hover{border-color:var(--accent)}
+#recBtn{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:11px;padding:12px 14px;font-size:.9rem;transition:all .2s}
+#recBtn.recording{background:rgba(255,60,60,.15);color:#ff4444;border-color:rgba(255,60,60,.5);animation:recpulse 1.4s ease-in-out infinite}
+@keyframes recpulse{0%,100%{box-shadow:0 0 0 0 rgba(255,60,60,.4)}50%{box-shadow:0 0 0 6px rgba(255,60,60,0)}}
 .status{font-size:.74rem;color:var(--dim);text-align:center;margin-top:8px;min-height:1.1em}
 .idle{text-align:center;padding:60px 20px}
 .idle .globe{font-size:3rem;margin-bottom:14px}
@@ -230,6 +243,7 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
           </div>
           <div class="play-row">
             <button id="playBtn">▶ &nbsp;Play</button>
+            <button id="recBtn" title="Record audio">⏺</button>
             <button id="stepBtn" title="Step +1h">+1h</button>
           </div>
           <p class="status" id="statusEl">Ready</p>
@@ -567,6 +581,8 @@ async function buildEngine(p, sessionKey, lags) {
   masterLimiter.connect(fftAnalyser);
   masterLimiter.connect(splitter);
   splitter.connect(analyserL, 0); splitter.connect(analyserR, 1);
+  const recDest = rawCtx.createMediaStreamDestination();
+  masterLimiter.connect(recDest);
   const xyBufL = new Float32Array(analyserL.fftSize);
   const xyBufR = new Float32Array(analyserR.fftSize);
 
@@ -878,7 +894,7 @@ async function buildEngine(p, sessionKey, lags) {
 
   const getCoeffs = () => ({ L: curCoeffsL, R: curCoeffsR });
 
-  return { startAll, stopAll, updateParams, setPitchCents, getCoeffs, dispose, analyser, analyserL, analyserR, xyBufL, xyBufR, fftAnalyser, morphFraction, masterFade };
+  return { startAll, stopAll, updateParams, setPitchCents, getCoeffs, dispose, analyser, analyserL, analyserR, xyBufL, xyBufR, fftAnalyser, morphFraction, masterFade, recDest };
 }
 
 // ══════════════════════════════════════════════════════
@@ -1457,6 +1473,55 @@ playBtn.addEventListener('click', async()=>{
 });
 
 stepBtn.addEventListener('click',()=>{if(timeline.length)tlStep();});
+
+// ── Audio recorder ────────────────────────────────────
+const recBtn = document.getElementById('recBtn');
+let mediaRecorder = null;
+let recChunks = [];
+let recStart = 0;
+
+function recTick() {
+  if (!mediaRecorder || mediaRecorder.state !== 'recording') return;
+  const elapsed = Math.floor((Date.now() - recStart) / 1000);
+  const m = String(Math.floor(elapsed / 60)).padStart(2,'0');
+  const s = String(elapsed % 60).padStart(2,'0');
+  recBtn.title = `Recording ${m}:${s} — click to stop`;
+  setTimeout(recTick, 1000);
+}
+
+recBtn.addEventListener('click', () => {
+  if (!eng) { statusEl.textContent = 'Start playback first'; return; }
+
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop();
+    return;
+  }
+
+  recChunks = [];
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+    ? 'audio/webm;codecs=opus' : 'audio/ogg;codecs=opus';
+  mediaRecorder = new MediaRecorder(eng.recDest.stream, { mimeType });
+
+  mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recChunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    recBtn.classList.remove('recording');
+    recBtn.title = '⏺ Record audio';
+    const blob = new Blob(recChunks, { type: mimeType });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const loc  = (selLocName || 'weather').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'');
+    a.href = url;
+    a.download = `weatherplayer-${loc}-${Date.now()}.webm`;
+    a.click();
+    URL.revokeObjectURL(url);
+    statusEl.textContent = 'Recording saved';
+  };
+
+  mediaRecorder.start(1000); // collect chunks every second
+  recStart = Date.now();
+  recBtn.classList.add('recording');
+  recTick();
+});
 
 // ── Speed buttons ──────────────────────────────────────
 document.querySelectorAll('.speed-btn').forEach(btn=>{
