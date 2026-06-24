@@ -39,12 +39,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-seri
 #genCanvas{position:fixed;inset:0;z-index:0;pointer-events:none}
 .page{position:relative;z-index:1;max-width:1080px;margin:0 auto;padding:0 18px 60px}
 header{padding:34px 0 22px;text-align:center}
+footer{text-align:center;padding:28px 0 10px;font-size:.75rem;color:var(--dim)}
+footer a{color:var(--dim);text-decoration:none;transition:color .15s}
+footer a:hover{color:var(--text)}
+.footer-icon{display:inline-flex;align-items:center;vertical-align:middle;margin:0 3px}
 h1{font-size:1.9rem;font-weight:200;letter-spacing:.18em}
 h1 em{font-style:normal;color:var(--accent)}
 .tagline{color:var(--dim);font-size:.8rem;margin-top:6px;letter-spacing:.06em}
 .search-box{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:15px;margin-bottom:13px}
 .search-row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start}
-.loc-wrap{position:relative;flex:1;min-width:180px}
+.loc-wrap{position:relative;flex:1;min-width:120px}
 input[type=text],input[type=date]{
   width:100%;background:rgba(255,255,255,.045);border:1px solid var(--border);
   border-radius:9px;color:var(--text);padding:9px 12px;font-size:.86rem;outline:none;transition:border-color .2s
@@ -76,9 +80,22 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 @media(max-width:680px){.main-grid{grid-template-columns:1fr}}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:17px}
 .ptitle{font-size:.68rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:13px}
+.w-title-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.w-title-row .ptitle{margin-bottom:0}
 .w-loc{font-size:.95rem;font-weight:400;margin-bottom:2px}
 .w-date{font-size:.76rem;color:var(--dim);margin-bottom:11px}
 .w-hero{display:flex;align-items:center;gap:13px;margin-bottom:14px}
+.w-compact-hdr{display:none}
+.w-compact-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:3px}
+.w-compact-left{display:flex;align-items:center;gap:8px}
+.w-compact-icon{font-size:1.6rem;line-height:1}
+.w-compact-temp{font-size:1.5rem;font-weight:200}
+.w-compact-desc{font-size:.75rem;color:var(--dim);margin-left:2px;align-self:flex-end;margin-bottom:2px}
+.w-compact-meta{font-size:.7rem;color:var(--dim);margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wmod{display:none;margin-top:4px}
+.wmod-lbl{font-size:.6rem;color:var(--accent);text-transform:uppercase;letter-spacing:.06em;opacity:.8}
+.wmod-bg{height:2px;background:rgba(255,255,255,.08);border-radius:1px;margin-top:2px;overflow:hidden}
+.wmod-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:1px;width:0%;transition:width .4s}
 .w-icon{font-size:3rem;line-height:1}
 .w-temp{font-size:2.6rem;font-weight:200}
 .w-desc{color:var(--dim);font-size:.83rem;margin-top:3px}
@@ -96,14 +113,44 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
 .bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px}
 .right-col{position:relative}
 .right-stack{position:absolute;inset:0;overflow:hidden;display:flex;flex-direction:column;gap:13px}
-.right-stack>.panel{flex:1;display:flex;flex-direction:column;min-height:0}
+.right-stack>.panel{flex:none;display:flex;flex-direction:column;min-height:0}
+.right-stack>.panel:first-child{flex:1}
 #waveCanvas{width:100%;flex:1;min-height:0;display:block;border-radius:8px;background:rgba(255,255,255,.04);margin-bottom:12px;image-rendering:pixelated}
 @media(max-width:680px){
-  .main-grid{grid-template-columns:1fr}
+  .page{padding-bottom:16px}
+  .main-grid{grid-template-columns:1fr;gap:8px}
   .right-col{position:static}
-  .right-stack{position:static;overflow:visible;height:auto}
+  .right-stack{position:static;overflow:visible;height:auto;gap:8px}
   .right-stack>.panel{flex:none;min-height:auto;height:auto}
-  #waveCanvas{flex:none;height:160px;min-height:160px}
+  #waveCanvas{flex:none;height:150px;min-height:150px}
+  #oscPane{display:none}
+  #nowBadge{display:none!important}
+  header{padding:14px 0 10px}
+  h1{font-size:1.3rem}
+  .tagline{display:none}
+  .search-box{padding:11px;margin-bottom:8px}
+  /* Compact conditions */
+  #wPanel{padding:11px 13px;margin-bottom:0}
+  #mPanel{display:none}
+  .w-title-row{display:none}
+  .w-loc{display:none}
+  .w-date{display:none}
+  .w-hero{display:none}
+  .w-compact-hdr{display:block;margin-bottom:6px}
+  .w-grid{grid-template-columns:repeat(3,1fr);gap:5px}
+  .w-stat{padding:5px 7px}
+  .sv{font-size:.8rem}
+  .ptitle{margin-bottom:6px;font-size:.62rem}
+  /* Compact sound panel */
+  .right-stack>.panel{padding:11px 13px}
+  .tl-wrap{margin-bottom:8px}
+  .pitch-row{margin-bottom:7px}
+  .speed-row{margin-bottom:8px}
+  /* Inline mod bars */
+  .wmod{display:block}
+  /* Compact osc pane */
+  #oscPane{display:grid}
+  .osc-cell canvas{height:52px!important}
 }
 .tl-wrap{margin-bottom:12px}
 .tl-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:2px;cursor:pointer;margin-bottom:7px}
@@ -219,6 +266,8 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
             <div class="osc-cell"><canvas id="oscR1"></canvas><span class="osc-lbl" id="oscLblR1">R₂</span></div>
             <div class="osc-cell"><canvas id="oscR2"></canvas><span class="osc-lbl" id="oscLblR2">R₃</span></div>
           </div>
+        </div>
+        <div class="panel">
           <div class="ptitle" style="margin-bottom:8px">Timeline</div>
           <div class="tl-wrap">
             <div class="tl-current" id="tlCurrent"></div>
@@ -252,6 +301,10 @@ button:hover{opacity:.82} button:active{transform:scale(.97)} button:disabled{op
       </div>
     </div>
   </div>
+  <footer>2026 · made by ferluht &nbsp;
+    <a href="https://instagram.com/ferluht_" target="_blank" rel="noopener" title="Instagram" class="footer-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4.5"/><circle cx="17.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/></svg></a>
+    <a href="https://github.com/ferluht/weatherplayer" target="_blank" rel="noopener" title="GitHub" class="footer-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.34-3.369-1.34-.454-1.155-1.11-1.463-1.11-1.463-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg></a>
+  </footer>
 </div>
 
 <script>
@@ -1054,7 +1107,10 @@ function liveRenderTick() {
 
   // ── Weather stats ──
   const g = id => document.getElementById(id);
-  if (g('wv-temp'))   g('wv-temp').textContent   = Math.round(linI(fw.temperature_2m, tw.temperature_2m)) + '°C';
+  const tempStr = Math.round(linI(fw.temperature_2m, tw.temperature_2m)) + '°C';
+  if (g('wv-temp'))  g('wv-temp').textContent  = tempStr;
+  if (g('wv-temp2')) g('wv-temp2').textContent = tempStr;
+  if (g('wv-temp3')) g('wv-temp3').textContent = tempStr;
   if (g('wv-cloud'))  g('wv-cloud').textContent  = Math.round(linI(fw.cloud_cover, tw.cloud_cover)) + '%';
   if (g('wv-humid'))  g('wv-humid').textContent  = Math.round(linI(fw.relative_humidity_2m, tw.relative_humidity_2m)) + '%';
   if (g('wv-press'))  g('wv-press').textContent  = Math.round(linI(fw.surface_pressure, tw.surface_pressure)) + ' hPa';
@@ -1096,6 +1152,7 @@ function liveRenderTick() {
   ];
   bars.forEach((b, i) => {
     const fill = g('map-fill-'+i); if (fill) fill.style.width = b.pct.toFixed(1)+'%';
+    const wfill = g('wmod-fill-'+i); if (wfill) wfill.style.width = b.pct.toFixed(1)+'%';
     if (b.val !== null) { const val = g('map-val-'+i); if (val) val.textContent = b.val; }
   });
 }
@@ -1266,18 +1323,37 @@ function renderWeather(w, loc) {
   const dir=dirs[Math.round((w.wind_direction_10m||0)/45)%8];
   const dateLabel=w.time?new Date(w.time+'Z').toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'UTC'})+' UTC':'';
   document.getElementById('wPanel').innerHTML=`
-    <div class="ptitle">Conditions</div>
+    <div class="w-title-row">
+      <div class="ptitle" style="margin-bottom:0">Conditions</div>
+      <span id="wmod-keybadge" class="key-badge wmod" style="display:none"></span>
+    </div>
     <div class="w-loc">${loc.name}</div>
     ${dateLabel?`<div class="w-date">${dateLabel}</div>`:''}
     <div class="w-hero"><div class="w-icon">${icon}</div>
-      <div><div class="w-temp" id="wv-temp">${Math.round(w.temperature_2m)}°C</div><div class="w-desc">${desc}</div></div>
+      <div>
+        <div class="w-temp" id="wv-temp">${Math.round(w.temperature_2m)}°C</div>
+        <div class="w-desc">${desc}</div>
+        <div class="wmod"><span class="wmod-lbl">timbre</span><div class="wmod-bg"><div class="wmod-fill" id="wmod-fill-2"></div></div></div>
+      </div>
+    </div>
+    <div class="w-compact-hdr">
+      <div class="w-compact-top">
+        <div class="w-compact-left">
+          <span class="w-compact-icon">${icon}</span>
+          <span class="w-compact-temp" id="wv-temp2">${Math.round(w.temperature_2m)}°C</span>
+          <span class="w-compact-desc">${desc}</span>
+        </div>
+        <span id="wmod-keybadge2" class="key-badge" style="display:none"></span>
+      </div>
+      <div class="w-compact-meta">${loc.name}${dateLabel ? ' · '+dateLabel : ''}</div>
     </div>
     <div class="w-grid">
-      <div class="w-stat"><div class="sl">Wind</div><div class="sv" id="wv-wind">${Math.round(w.wind_speed_10m)} km/h ${dir}</div></div>
-      <div class="w-stat"><div class="sl">Cloud cover</div><div class="sv" id="wv-cloud">${Math.round(w.cloud_cover)}%</div></div>
-      <div class="w-stat"><div class="sl">Humidity</div><div class="sv" id="wv-humid">${Math.round(w.relative_humidity_2m)}%</div></div>
+      <div class="w-stat"><div class="sl">Wind</div><div class="sv" id="wv-wind">${Math.round(w.wind_speed_10m)} km/h ${dir}</div><div class="wmod"><span class="wmod-lbl">noise</span><div class="wmod-bg"><div class="wmod-fill" id="wmod-fill-3"></div></div></div></div>
+      <div class="w-stat"><div class="sl">Clouds</div><div class="sv" id="wv-cloud">${Math.round(w.cloud_cover)}%</div><div class="wmod"><span class="wmod-lbl">filter</span><div class="wmod-bg"><div class="wmod-fill" id="wmod-fill-1"></div></div></div></div>
+      <div class="w-stat"><div class="sl">Humidity</div><div class="sv" id="wv-humid">${Math.round(w.relative_humidity_2m)}%</div><div class="wmod"><span class="wmod-lbl">reverb</span><div class="wmod-bg"><div class="wmod-fill" id="wmod-fill-4"></div></div></div></div>
       <div class="w-stat"><div class="sl">Pressure</div><div class="sv" id="wv-press">${Math.round(w.surface_pressure)} hPa</div></div>
-      <div class="w-stat"><div class="sl">Precipitation</div><div class="sv" id="wv-precip">${(w.precipitation||0).toFixed(1)} mm</div></div>
+      <div class="w-stat"><div class="sl">Precip</div><div class="sv" id="wv-precip">${(w.precipitation||0).toFixed(1)} mm</div><div class="wmod"><span class="wmod-lbl">rain</span><div class="wmod-bg"><div class="wmod-fill" id="wmod-fill-5"></div></div></div></div>
+      <div class="w-stat"><div class="sl">Temp</div><div class="sv" id="wv-temp3">${Math.round(w.temperature_2m)}°C</div><div class="wmod"><span class="wmod-lbl">timbre</span><div class="wmod-bg"><div class="wmod-fill" id="wmod-fill-2"></div></div></div></div>
     </div>`;
 }
 
@@ -1291,6 +1367,15 @@ function renderMappings(p) {
         <div class="map-hdr"><span class="map-lbl">${b.label} <span style="opacity:.5;font-size:.68rem">${b.sub}</span></span><span class="map-val" id="map-val-${i}">${b.val}</span></div>
         <div class="bar-bg"><div class="bar-fill" id="map-fill-${i}" style="width:${b.pct}%"></div></div>
       </div>`).join('')}`;
+  // Populate inline mod bars in wPanel (mobile)
+  p.bars.forEach((b,i) => {
+    const f = document.getElementById('wmod-fill-'+i);
+    if (f) f.style.width = b.pct+'%';
+  });
+  const kbLabel = sessionKey ? sessionKey.keyName : '';
+  ['wmod-keybadge','wmod-keybadge2'].forEach(id => {
+    const el = document.getElementById(id); if (el && kbLabel) { el.textContent = kbLabel; el.style.display = ''; }
+  });
 }
 
 function renderTimelineUI() {
