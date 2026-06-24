@@ -648,7 +648,7 @@ async function buildEngine(p, sessionKey, lags) {
   const splitter = rawCtx.createChannelSplitter(2);
   const analyserL = rawCtx.createAnalyser();
   const analyserR = rawCtx.createAnalyser();
-  analyserL.fftSize = isMobile ? 512 : 1024; analyserR.fftSize = isMobile ? 512 : 1024;
+  analyserL.fftSize = 4096; analyserR.fftSize = 4096;
   masterLimiter.connect(fftAnalyser);
   masterLimiter.connect(splitter);
   splitter.connect(analyserL, 0); splitter.connect(analyserR, 1);
@@ -978,65 +978,95 @@ function startWave() {
   const canvas = document.getElementById('waveCanvas');
   const ctx = canvas.getContext('2d');
   let phase = 0;
-  let smoothPeak = 0.001;
 
-  function draw() {
+  const PERIOD_N   = 128;
+  const PERIODS    = 4;
+  const DISPLAY_N  = PERIOD_N * PERIODS;
+  const SCROLL_HZ  = 0.4; // periods per second — slow drift
+  let   scrollPos  = 0;
+  let   lastTs     = 0;
+  const CAPTURE_MS = 200;
+
+  let snapFromL = null, snapFromR = null;
+  let snapToL   = null, snapToR   = null;
+  let snapFromPeak = 0.001, snapToPeak = 0.001;
+  let lastCapture = -Infinity, captureTs = 0;
+
+  function capture(phaseOff) {
+    if (!eng) return;
+    const {L, R} = eng.getCoeffs();
+    // Synthesize one period at current phase, tile PERIODS times
+    const newL = new Float32Array(DISPLAY_N);
+    const newR = new Float32Array(DISPLAY_N);
+    L.forEach(c => { const w = synthWave(c, PERIOD_N, phaseOff); for (let p=0;p<PERIODS;p++) for (let i=0;i<PERIOD_N;i++) newL[p*PERIOD_N+i]+=w[i]; });
+    R.forEach(c => { const w = synthWave(c, PERIOD_N, phaseOff); for (let p=0;p<PERIODS;p++) for (let i=0;i<PERIOD_N;i++) newR[p*PERIOD_N+i]+=w[i]; });
+
+    // Normalize to fixed peak so amplitude never swings between captures
+    let pk = 0.001;
+    for (let i = 0; i < DISPLAY_N; i++) pk = Math.max(pk, Math.abs(newL[i]), Math.abs(newR[i]));
+    for (let i = 0; i < DISPLAY_N; i++) { newL[i] /= pk; newR[i] /= pk; }
+    const pk2 = 1.0;
+
+    if (!snapToL) {
+      snapFromL = newL; snapFromR = newR; snapFromPeak = pk2;
+    } else {
+      snapFromL = snapToL; snapFromR = snapToR; snapFromPeak = snapToPeak;
+    }
+    snapToL = newL; snapToR = newR; snapToPeak = pk2;
+  }
+
+  function draw(ts) {
+    waveRaf = requestAnimationFrame(draw);
     const W = canvas.offsetWidth || 300;
     const H = canvas.offsetHeight || 200;
-    canvas.width = W; canvas.height = H;
+    if (canvas.width !== W) canvas.width = W;
+    if (canvas.height !== H) canvas.height = H;
     ctx.clearRect(0, 0, W, H);
 
-    if (eng && audioPlaying && eng.analyserL && eng.analyserR) {
-      eng.analyserL.getFloatTimeDomainData(eng.xyBufL);
-      eng.analyserR.getFloatTimeDomainData(eng.xyBufR);
-      const L = eng.xyBufL, R = eng.xyBufR, N = L.length;
+    if (eng && audioPlaying) {
+      if (!snapToL && ts - lastCapture >= CAPTURE_MS) { capture(0); lastCapture = ts; captureTs = ts; }
+      if (!snapToL) return;
 
-      // Smooth peak normalization
-      let framePeak = 0.001;
-      for (let i = 0; i < N; i++) { const a = Math.max(Math.abs(L[i]), Math.abs(R[i])); if (a > framePeak) framePeak = a; }
-      smoothPeak = framePeak > smoothPeak
-        ? smoothPeak * 0.97 + framePeak * 0.03
-        : smoothPeak * 0.9998 + framePeak * 0.0002;
-      const amp = (H * 0.22) / smoothPeak;
+      // Advance phase
+      const dt = lastTs ? (ts - lastTs) / 1000 : 0;
+      lastTs = ts;
+      scrollPos = (scrollPos + SCROLL_HZ * PERIOD_N * dt) % PERIOD_N;
 
-      // Centre line
+      if (ts - lastCapture >= CAPTURE_MS) { capture(scrollPos); lastCapture = ts; captureTs = ts; }
+
+      const t = Math.min(1, (ts - captureTs) / CAPTURE_MS);
+      const amp = H * 0.38;
+
       ctx.strokeStyle = 'rgba(255,255,255,.04)';
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
 
-      // Left channel (blue, upper half)
-      ctx.beginPath();
-      ctx.strokeStyle = 'rgba(123,159,255,.75)';
-      ctx.lineWidth = 1.5;
-      for (let i = 0; i < N; i++) {
-        const x = (i / (N - 1)) * W;
-        const y = H / 2 - L[i] * amp;
+      ctx.beginPath(); ctx.strokeStyle = 'rgba(123,159,255,.75)'; ctx.lineWidth = 1.5;
+      for (let i = 0; i < DISPLAY_N; i++) {
+        const x = (i / (DISPLAY_N-1)) * W;
+        const y = H/2 - (snapFromL[i] + (snapToL[i] - snapFromL[i]) * t) * amp;
         i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       }
       ctx.stroke();
 
-      // Right channel (purple, slightly offset for stereo feel)
-      ctx.beginPath();
-      ctx.strokeStyle = 'rgba(192,132,252,.55)';
-      ctx.lineWidth = 1.5;
-      for (let i = 0; i < N; i++) {
-        const x = (i / (N - 1)) * W;
-        const y = H / 2 - R[i] * amp;
+      ctx.beginPath(); ctx.strokeStyle = 'rgba(192,132,252,.55)'; ctx.lineWidth = 1.5;
+      for (let i = 0; i < DISPLAY_N; i++) {
+        const x = (i / (DISPLAY_N-1)) * W;
+        const y = H/2 - (snapFromR[i] + (snapToR[i] - snapFromR[i]) * t) * amp;
         i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
       }
       ctx.stroke();
 
     } else {
-      smoothPeak = 0.001;
+      snapToL = null;
       phase += 0.012;
       ctx.beginPath(); ctx.strokeStyle = 'rgba(123,159,255,.16)'; ctx.lineWidth = 1;
-      for (let i = 0; i <= W; i++) { const y = H/2 + Math.sin(i/W*Math.PI*4 + phase)*2.2; i ? ctx.lineTo(i,y) : ctx.moveTo(i,y); }
+      for (let i = 0; i <= W; i++) { const y = H/2 + Math.sin(i/W*Math.PI*4+phase)*2.2; i ? ctx.lineTo(i,y) : ctx.moveTo(i,y); }
       ctx.stroke();
     }
-    waveRaf = requestAnimationFrame(draw);
   }
   if (waveRaf) cancelAnimationFrame(waveRaf);
-  draw();
+  waveRaf = requestAnimationFrame(draw);
 }
 
 // ── Oscillator waveform pane ─────────────────────────
@@ -1044,13 +1074,13 @@ const OSC_IDS = ['oscL0','oscL1','oscL2','oscR0','oscR1','oscR2'];
 const oscCanvases = OSC_IDS.map(id => document.getElementById(id));
 let oscRaf = null;
 
-function synthWave(coeffs, N=128) {
+function synthWave(coeffs, N=128, phaseOffset=0) {
   const wave = new Float32Array(N);
   const {real, imag} = coeffs;
   for (let i=0; i<N; i++) {
     let y = 0;
     for (let k=1; k<real.length; k++) {
-      const angle = k * 2*Math.PI * i / N;
+      const angle = k * 2*Math.PI * (i + phaseOffset) / N;
       y += real[k]*Math.cos(angle) - imag[k]*Math.sin(angle);
     }
     wave[i] = y;
