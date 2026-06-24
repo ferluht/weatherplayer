@@ -552,13 +552,12 @@ function weatherToMusic(w, sessionKey) {
 // ══════════════════════════════════════════════════════
 //  AUDIO ENGINE  — FM oscillators with lagged temperature waveforms
 // ══════════════════════════════════════════════════════
-Tone.setContext(new Tone.Context({ latencyHint: 'playback' }));
-
 let eng = null;
 let audioPlaying = false;
 
 async function buildEngine(p, sessionKey, lags) {
   if (eng) { eng.dispose(); eng=null; }
+  Tone.setContext(new Tone.Context({ latencyHint: 'playback' }));
   await Tone.start();
 
   // Resume AudioContext when BT headphones connect/disconnect on mobile
