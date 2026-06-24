@@ -559,6 +559,12 @@ async function buildEngine(p, sessionKey, lags) {
   if (eng) { eng.dispose(); eng=null; }
   await Tone.start();
 
+  // Resume AudioContext when BT headphones connect/disconnect on mobile
+  const rawCtx0 = Tone.getContext().rawContext;
+  rawCtx0.addEventListener('statechange', () => {
+    if (rawCtx0.state === 'suspended' && audioPlaying) rawCtx0.resume();
+  });
+
   // ── Master chain ──────────────────────────────────────
   const masterFade       = new Tone.Gain(0);
   const masterFilter     = new Tone.Filter({ frequency:p.filterHz, type:'lowpass', Q:p.filterQ });
